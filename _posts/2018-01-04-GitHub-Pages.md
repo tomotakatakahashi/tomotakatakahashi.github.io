@@ -21,6 +21,20 @@ Ubuntuに `apt` で `ruby` や `ruby-dev` をインストールしておく。�
 [Quick-start guide](https://jekyllrb.com/docs/quickstart/)などを参照するといい。
 GitHub Pagesのリポジトリで `jekyll new .` でサンプルを作成し、`bundle exec jekyll serve` でサーバを立ち上げ、 `localhost:4000` にアクセスし、サンプルが見えることなどを確認する。
 
+### 2023-11-04 追記
+[Jekyll on macOS | Jekyll • Simple, blog-aware, static sites](https://jekyllrb.com/docs/installation/macos/) にしたがってJekyllをインストールしようとすると、 `ruby-install ruby 3.1.3` をした段階で
+
+> ossl_ts.c:829:5: error: incomplete definition of type 'struct TS_verify_ctx'
+
+というエラーが出た。これは環境変数を
+
+```
+export LDFLAGS="-L/opt/homebrew/opt/openssl@1.1/lib"
+export CPPFLAGS="-I/opt/homebrew/opt/openssl@1.1/include"
+export PKG_CONFIG_PATH="/opt/homebrew/opt/openssl@1.1/lib/pkgconfig"
+```
+
+と設定すれば回避できた。（事前に `brew install openssl@1.1` する必要もあるかもしれない。）参考リンク：[Compiling ruby 3.1.3 failed! (MacOS Ventura 13.5.1 M1 Max) · rbenv/ruby-build · Discussion #2245](https://github.com/rbenv/ruby-build/discussions/2245)
 
 ## jekyllでページを作る
 
