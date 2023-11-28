@@ -26,7 +26,7 @@ EmbedRankを実際に実装してみて、[QuicksortのWikipedia記事](https://
 9. sort
 10. partition-exchange sort
 
-最初の項目が「quicksort」でなく「divide-and-conquer algorithm」でないのはやや不思議だ。
+最初の項目が「quicksort」でなく「divide-and-conquer algorithm」になっているのはやや不思議だ。
 
 ところで、この結果を見ると6番目に「sorting」、9番目に「sort」とほとんど同じ意味の語句が選ばれてしまっている。これを解決するのがEmbedRank++で、EmbedRank++では候補語句からキーフレーズを選び出す際にMMR (Maximal Marginal Relevance) を使う。MMRはクエリに近く、かつこれまでに選んだ候補からは遠いものを順次選んでいく方法だ。
 
