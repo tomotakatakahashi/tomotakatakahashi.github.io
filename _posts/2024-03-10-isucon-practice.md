@@ -72,10 +72,35 @@ sudo systemctl restart isu-ruby
 
 と書いてあったため。
 
-再度ベンチマーカーを実行すると、CPU使用率がmysqldが200%、メモリ使用量が1GB程度になる。また、リクエスト失敗が増えて得点が0に下がってしまう。
+再度ベンチマーカーを実行すると、CPU使用率がmysqldが200%、メモリ使用量が1GB程度になる。また、リクエスト失敗が増えて得点が0に下がってしまう。（ところでこのような失敗は書籍には載っていない。自分で手を動かすのは重要だと改めて思う。）
 
 > {"pass":true,"score":0,"success":174,"fail":57,"messages":["リクエストがタイムアウトしました (GET /)","リクエストがタイムアウトしました (GET /@bessie)","リクエストがタイムアウトしました (GET /@irma)","リクエストがタイムアウトしました (GET /@janet)","リクエストがタイムアウトしました (GET /@marquita)","リクエストがタイムアウトしました (GET /@shelly)","リクエストがタイムアウトしました (GET /image/6910.jpg)","リクエストがタイムアウトしました (GET /posts/9399)","リクエストがタイムアウトしました (POST /login)","リクエストがタイムアウトしました (POST /register)"]}
 
+得点が0なのは困るので、worker_processesを2に変更する。依然としてmysqldがCPUを200%使い切っているが、正の得点が得られる。
+
+> {"pass":true,"score":584,"success":583,"fail":4,"messages":["リクエストがタイムアウトしました (POST /login)","リクエストがタイムアウトしました (POST /register)"]}
+
 ## MySQLへのindexの追加
+
+ボトルネックがMySQLのCPU使用量に移動したため、MySQLのスロークエリログを取得する。
+
+
+`/etc/mysql/mysql.conf.d/mysqld.cnf` の `[mysqld]` 以下を追記する。
+
+```
+slow_query_log = 1
+slow_query_log_file = /var/log/mysql/mysql-slow.log
+long_query_time = 0
+```
+
+```bash
+sudo nano /etc/mysql/mysql.conf.d/mysqld.cnf
+```
+
+その後、MySQLを再起動する。
+
+```bash
+sudo systemctl restart mysql
+```
 
 
