@@ -169,6 +169,8 @@ SELECT `id`, `user_id`, `body`, `created_at`, `mime` FROM `posts` ORDER BY `crea
 
 まずはnginxがJSON形式でアクセスログを記録するように設定を変更する。 `/etc/nginx/nginx.conf` を編集する。
 
+TODO: 説明丁寧に
+
 ```bash
 sudo nano /etc/nginx/nginx.conf
 ```
@@ -193,6 +195,28 @@ sudo nano /etc/nginx/nginx.conf
 ```
 
 
+ログファイルを削除し、新しいログ形式を適用するためにnginxを再起動する。
+
+```bash
+sudo rm /var/log/nginx/access.log && sudo systemctl restart nginx
+```
+
+alpをダウンロードし、展開する。
+
+```bash
+wget https://github.com/tkuchiki/alp/releases/download/v1.0.21/alp_linux_amd64.tar.gz
+tar xzvf alp_linux_amd64.tar.gz
+```
+
+ベンチマーカーを実行し、alpでアクセスログを集計する。
+
+```bash
+./alp json --file /var/log/nginx/access.log --sort sum -r -m "/image/\d+,/posts/\d+,/@\w+"
+```
+
+エンドポイント `/image/\d+` が一番時間がかかっていることがわかる。
+
+TODO
 
 
 ## CloudFormationスタックを削除する
