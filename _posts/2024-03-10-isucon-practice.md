@@ -165,7 +165,33 @@ SELECT `id`, `user_id`, `body`, `created_at`, `mime` FROM `posts` ORDER BY `crea
 
 というクエリだが、 `posts` テーブルの行を全て取得しており、必要な処理なのか疑問が残る。使われているのは `app.rb` の227行目で、エンドポイントは `/` であり、周辺に `make_posts` というN+1問題を抱えていそうなあやしい関数が見つかる。この辺りを直したい気持ちになるが、その前にまずはここの影響の大きさを計測する。
 
-## 
+## `alp` によるアクセスログの集計
+
+まずはnginxがJSON形式でアクセスログを記録するように設定を変更する。 `/etc/nginx/nginx.conf` を編集する。
+
+```bash
+sudo nano /etc/nginx/nginx.conf
+```
+
+```
+        access_log /var/log/nginx/access.log;
+```
+
+```
+  log_format json escape=json '{"time": "$time_iso8601",'
+    '"host": "$remote_addr",'
+    '"status": "$status",'
+    '"method": "$request_method",'
+    '"uri": "$request_uri",'
+    '"body_bytes": "$body_bytes_sent",'
+    '"request_time": "$request_time",'
+    '"response_time": "$upstream_response_time",'
+    '"ua": "$http_user_agent",'
+    '"referrer": "$http_referer"}';
+
+        access_log /var/log/nginx/access.log json;
+```
+
 
 
 
