@@ -126,5 +126,28 @@ SELECT * FROM `comments` WHERE `post_id` = 9984 ORDER BY `created_at` DESC LIMIT
 mysql -u isuconp -p isuconp
 mysql> SHOW CREATE TABLE comments;
 mysql> ALTER TABLE `comments` ADD INDEX `post_id_idx` (`post_id`);
+mysql> exit
 ```
 
+再度スロークエリログを取得しなおしたいが、前回のベンチマーク時のログと分離するため、ログを削除してMySQLを再起動する（もっといいやり方がある気はする）。
+
+```bash
+sudo rm /var/log/mysql/mysql-slow.log && sudo systemctl restart mysql
+```
+
+ベンチマークを再度実行する。CPU使用率がmysqld 60%、ruby 40% + 40%くらいに変化する。得点も大幅に上昇する。
+
+> {"pass":true,"score":10208,"success":8851,"fail":0,"messages":[]}
+
+
+
+TODO: 続きを書く
+
+
+## CloudFormationスタックを削除する
+
+使っていないときにAWS利用料がかからないように、演習を終えたらAWS上のリソースをすべて削除する。今回はCloudFormationでリソースを作成したので、CloudFormationのstackを削除するだけでよい。
+
+```bash
+aws cloudformation delete-stack --stack-name private-isu
+```
