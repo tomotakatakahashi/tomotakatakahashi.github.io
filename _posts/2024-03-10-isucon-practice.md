@@ -11,7 +11,7 @@ categories: プログラミング
 
 本の付録Aに実践例があり、そこではAWSで起動されているので、得点比較などのために同じくAWSで演習する。
 
-AWS マネジメントコンソールからぽちぽち操作してEC2インスタンスを立ち上げると、気付かないうちにsubsetなどがどんどん作られて収拾がつかなくなるので、AWS CloudFormationで作りたい。
+AWS マネジメントコンソールからぽちぽち操作してEC2インスタンスを立ち上げると、気付かないうちにsubnetなどがどんどん作られて収拾がつかなくなるので、AWS CloudFormationで作りたい。
 
 有志の方がCloudFormation templateを[公開されている](https://gist.github.com/tohutohu/024551682a9004da286b0abd6366fa55)ので、これを使う。念のため変なリソースが指定されていないか、特にAMI image IDがprivate-isu公式のものと一致しているかを確認しておく。
 
