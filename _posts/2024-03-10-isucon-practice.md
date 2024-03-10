@@ -103,4 +103,28 @@ sudo nano /etc/mysql/mysql.conf.d/mysqld.cnf
 sudo systemctl restart mysql
 ```
 
+スロークエリログを生成するため、ベンチマークを実行する。スロークエリログを有効化したためか、ベンチマークの得点が落ちる。
+
+> {"pass":true,"score":586,"success":587,"fail":5,"messages":["リクエストがタイムアウトしました (GET /favicon.ico)","リクエストがタイムアウトしました (GET /logout)","リクエストがタイムアウトしました (POST /login)","リクエストがタイムアウトしました (POST /register)"]}
+
+`pt-query-digest` を使い、スロークエリログを集計する。
+
+```bash
+sudo apt update && sudo apt install percona-toolkit
+sudo pt-query-digest /var/log/mysql/mysql-slow.log | tee digest_$(date +%Y%m%d%H%M).txt
+```
+
+70%の時間を、次のクエリが消費していることがわかる。
+
+```sql
+SELECT * FROM `comments` WHERE `post_id` = 9984 ORDER BY `created_at` DESC LIMIT 3
+```
+
+「Rows examine」の項目を見ると、毎回10万行がチェックされている。インデックスを貼ることで高速化が期待できるため、インデックスを追加する。MySQLのパスワードは `isuconp` で設定されている。
+
+```
+mysql -u isuconp -p isuconp
+mysql> SHOW CREATE TABLE comments;
+mysql> ALTER TABLE `comments` ADD INDEX `post_id_idx` (`post_id`);
+```
 
