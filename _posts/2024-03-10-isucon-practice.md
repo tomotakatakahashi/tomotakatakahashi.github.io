@@ -20,7 +20,6 @@ AWS CLIから、AWS CloudFormationのstackをdeployする。EC2 key pairとGitHu
 ```bash
 wget https://gist.githubusercontent.com/tohutohu/024551682a9004da286b0abd6366fa55/raw/e8a86dd7195c18efc9322f32639fde8021062dd8/private-isu.yaml
 aws cloudformation deploy --stack-name private-isu --region ap-northeast-1 --template-file private-isu.yaml --parameter-overrides KeyPairName=your_key_name GitHubUsername=your_github_name
-hashi
 ```
 
 サーバーインスタンスとベンチマーカーインスタンスのIPアドレスを探し、それぞれSSHでログインする。
@@ -55,7 +54,7 @@ top
 
 > {"pass":true,"score":592,"success":559,"fail":3,"messages":["リクエストがタイムアウトしました (POST /login)","リクエストがタイムアウトしました (POST /register)"]}
 
-## worker threadの引き上げ
+## worker processの引き上げ
 
 リソースが全て活用できていない。リソースを活用するため、Unicornのworker processを増加させる。
 
@@ -139,9 +138,35 @@ sudo rm /var/log/mysql/mysql-slow.log && sudo systemctl restart mysql
 
 > {"pass":true,"score":10208,"success":8851,"fail":0,"messages":[]}
 
+## worker processの引き上げとボトルネック探し
 
+再びCPUの使用率に余裕が出てきているため、Unicornのworker processを4に上げる。
 
-TODO: 続きを書く
+```bash
+nano private_isu/webapp/ruby/unicorn_config.rb
+sudo systemctl restart isu-ruby
+```
+
+スロークエリログを削除した上で、再度ベンチマークを実行する。
+
+```bash
+sudo rm /var/log/mysql/mysql-slow.log && sudo systemctl restart mysql
+```
+
+> {"pass":true,"score":13300,"success":12064,"fail":0,"messages":[]}
+
+`top` で確認したCPU使用率は、mysqldが70%、rubyが4×30%程度で、CPUを200%使い切っている。メモリはまだ1GB程度しか使っておらず、余裕がある。
+
+スロークエリログを見ても、インデックスを貼るだけで直ちに改善できそうなクエリは無い。一番時間を使っているクエリが
+
+```sql
+SELECT `id`, `user_id`, `body`, `created_at`, `mime` FROM `posts` ORDER BY `created_at` DESC
+```
+
+というクエリだが、 `posts` テーブルの行を全て取得しており、必要な処理なのか疑問が残る。使われているのは `app.rb` の227行目で、そのあたりを読むと `make_posts` というN+1問題を抱えていそうなあやしい関数が見つかる。これを直したい気持ちになるが、影響の大きさを計測する。
+
+## 
+
 
 
 ## CloudFormationスタックを削除する
