@@ -19,8 +19,22 @@ AWS CLIから、AWS CloudFormationのstackをdeployする。EC2 key pairとGitHu
 
 ```bash
 wget https://gist.githubusercontent.com/tohutohu/024551682a9004da286b0abd6366fa55/raw/e8a86dd7195c18efc9322f32639fde8021062dd8/private-isu.yaml
-aws cloudformation deploy --stack-name private-isu --region ap-northeast-1 --template-file private-isu.yaml --parameter-overrides KeyPairName=macbook_pro_2021 GitHubUsername=tomotakataka
+aws cloudformation deploy --stack-name private-isu --region ap-northeast-1 --template-file private-isu.yaml --parameter-overrides KeyPairName=your_key_name GitHubUsername=your_github_name
 hashi
+```
+
+サーバーインスタンスとベンチマーカーインスタンスのIPアドレスを探し、それぞれSSHでログインする。
+
+```bash
+aws ec2 describe-instances
+ssh isucon@your_benrhmark_instance_public_ip
+ssh isucon@your_server_instance_public_ip
+```
+
+サーバーインスタンスで、ベンチマーカーを実行しやすいように `cd` しておく。
+
+```bash
+cd private_isu.git/benchmarker/
 ```
 
 
