@@ -37,4 +37,22 @@ ssh isucon@your_server_instance_public_ip
 cd private_isu.git/benchmarker/
 ```
 
+## 最初のベンチマーク
+
+ベンチマークインスタンスからベンチマークを実行する。サーバーインスタンスに1分間負荷がかけられる。
+
+```bash
+./bin/benchmarker -u userdata -t http://192.168.1.10
+```
+
+サーバーインスタンス側では `top` コマンドで負荷を観察する。topコマンド実行中に「1」を押すとCPUの各コアの使用率が表示される。
+
+```bash
+top
+```
+
+ベンチマークが完了すると、約500点という結果が出る。サーバーインスタンス側では、CPU使用率（約100%/200%）、メモリ使用率（700MB/4GB）ともに余裕がある。
+
+> {"pass":true,"score":592,"success":559,"fail":3,"messages":["リクエストがタイムアウトしました (POST /login)","リクエストがタイムアウトしました (POST /register)"]}
+
 
