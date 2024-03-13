@@ -216,6 +216,12 @@ sudo ./alp json --file /var/log/nginx/access.log --sort sum -r -m "^/image/\d+\.
 
 エンドポイント `^/image/\d+\.(jpg|png|gif)$` が一番時間がかかっていることがわかる。
 
+## 画像をnginxから配信
+
+ソースコードを読むと、画像ファイルがRDBに格納され、Rubyを経由して返されていることがわかる。静的ファイルはアプリケーション部分を介さずにnginxから直接返すことができるはずなので、そのようにする。
+
+nginxの設定を変更し、 `/image/` 以下のリクエストは `/home/isucon/private_isu/webapp/public/image/` 以下からまずはファイルを探し、もしファイルが見つからなかったらアプリケーションサーバにリバースプロキシするように設定を変更する。
+
 ```bash
 sudo nano /etc/nginx/sites-enabled/isucon.conf
 ```
@@ -245,15 +251,91 @@ server {
 }
 ```
 
+画像に関してRDBを全く使わないようにすることも可能ではあるが、実装が大変なので、ここではリクエストの度にRDBから `/home/isucon/private_isu/webapp/public/image/` 以下に画像ファイルをコピーすることで、ディスクをキャッシュのように使うことにする。 `app.rb` を以下のように変更する。
+
+```diff
+@@ -3,6 +3,7 @@ require 'mysql2'
+ require 'rack-flash'
+ require 'shellwords'
+ require 'rack/session/dalli'
++require 'fileutils'
+
+ module Isuconp
+   class App < Sinatra::Base
+@@ -14,6 +15,8 @@ module Isuconp
+
+     POSTS_PER_PAGE = 20
+
++    IMAGE_DIR = File.expand_path('../../public/image', __FILE__)
++
+     helpers do
+       def config
+         @config ||= {
+@@ -349,6 +352,11 @@ module Isuconp
+           (params[:ext] == "png" && post[:mime] == "image/png") ||
+           (params[:ext] == "gif" && post[:mime] == "image/gif")
+         headers['Content-Type'] = post[:mime]
++
++        imgfile = IMAGE_DIR + "/#{post[:id]}.#{params[:ext]}"
++        f = File.open(imgfile, "w")
++        f.write(post[:imgdata])
++        f.close()
+         return post[:imgdata]
+       end
+```
+
+画像を格納するディレクトリを作っておく。
+
+```bash
+mkdir private_isu/webapp/public/image
+```
+
+設定が済んだら、再起動する。
+
 ```bash
 sudo rm /var/log/nginx/access.log && sudo systemctl restart nginx
 sudo rm /var/log/mysql/mysql-slow.log && sudo systemctl restart mysql
 sudo systemctl restart isu-ruby
 ```
 
+再度ベンチマークを実行すると、得点が伸びていることがわかる。
+
+> {"pass":true,"score":24378,"success":23137,"fail":0,"messages":[]}
+
+alpでアクセスログを集計すると、 `image/` にかかる時間の割合が減り、 `GET /` が一番時間がかかるようになっている。
+
+```bash
+sudo ./alp json --file /var/log/nginx/access.log --sort sum -r -m "^/image/\d+\.(jpg|png|gif)$,^/posts/\d+$,^/@\w+$"
+```
+
+
+
+
+
+
+<!--
+
+何か設定が間違っているが、 `/var/log/nginx/error.log` を開いても何も書いていないので、 `/etc/nginx/nginx.conf` を以下のように書き換える。
+
+```diff
+-        error_log /var/log/nginx/error.log;
++        error_log /var/log/nginx/error.log debug;
+```
+
+その後、nginxを再起動し、error.logを見ると、
+
+```bash
+sudo systemctl restart nginx
+sudo less /var/log/nginx/error.log
+```
+
+
 
 mkdir webapp/public/image
 nginx error_log deubg
+
+-->
+
 
 
 TODO
