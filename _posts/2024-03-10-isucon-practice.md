@@ -163,7 +163,7 @@ sudo rm /var/log/mysql/mysql-slow.log && sudo systemctl restart mysql
 SELECT `id`, `user_id`, `body`, `created_at`, `mime` FROM `posts` ORDER BY `created_at` DESC
 ```
 
-というクエリだが、 `posts` テーブルの行を全て取得しており、必要な処理なのか疑問が残る。使われているのは `app.rb` の227行目で、エンドポイントは `/` であり、周辺に `make_posts` というN+1問題を抱えていそうなあやしい関数が見つかる。この辺りを直したい気持ちになるが、その前にまずはここの影響の大きさを計測する。
+というクエリだが、 `posts` テーブルの行を全て取得しており、必要な処理なのか疑問が残る。使われているのは `app.rb` の227行目で、エンドポイントは `GET /` であり、周辺に `make_posts` というN+1問題を抱えていそうなあやしい関数が見つかる。この辺りを直したい気持ちになるが、その前にまずはここの影響の大きさを計測する。
 
 ## `alp` によるアクセスログの集計
 
@@ -211,10 +211,50 @@ tar xzvf alp_linux_amd64.tar.gz
 ベンチマーカーを実行し、alpでアクセスログを集計する。
 
 ```bash
-./alp json --file /var/log/nginx/access.log --sort sum -r -m "/image/\d+,/posts/\d+,/@\w+"
+sudo ./alp json --file /var/log/nginx/access.log --sort sum -r -m "^/image/\d+\.(jpg|png|gif)$,^/posts/\d+$,^/@\w+$"
 ```
 
-エンドポイント `/image/\d+` が一番時間がかかっていることがわかる。
+エンドポイント `^/image/\d+\.(jpg|png|gif)$` が一番時間がかかっていることがわかる。
+
+```bash
+sudo nano /etc/nginx/sites-enabled/isucon.conf
+```
+
+```
+server {
+  listen 80;
+
+  client_max_body_size 10m;
+  root /home/isucon/private_isu/webapp/public/;
+
+  location /image/ {
+    root /home/isucon/private_isu/webapp/public/;
+    expires 1d;
+    try_files $uri @app;
+  }
+
+  location @app {
+    internal;
+    proxy_pass http://localhost:8080;
+  }
+
+  location / {
+    proxy_set_header Host $host;
+    proxy_pass http://localhost:8080;
+  }
+}
+```
+
+```bash
+sudo rm /var/log/nginx/access.log && sudo systemctl restart nginx
+sudo rm /var/log/mysql/mysql-slow.log && sudo systemctl restart mysql
+sudo systemctl restart isu-ruby
+```
+
+
+mkdir webapp/public/image
+nginx error_log deubg
+
 
 TODO
 
