@@ -330,8 +330,14 @@ SELECT * FROM `posts` WHERE `id` = 3906
 
 ## `GET /` の改善
 
+`GET /` については、 `app.rb` を見るとわかるように、 `make_posts` 関数がN+1問題を抱えている。スロークエリログを見ても、1番目と3番目のクエリ
 
+```sql
+SELECT `id`, `user_id`, `body`, `created_at`, `mime` FROM `posts` ORDER BY `created_at` DESC;
+SELECT * FROM `users` WHERE `id` = 876
+```
 
+がどちらもこのエンドポイントで使われているクエリである。
 
 TODO
 
