@@ -218,9 +218,15 @@ sudo ./alp json --file /var/log/nginx/access.log --sort sum -r -m "^/image/\d+\.
 
 ## 画像をnginxから配信
 
-ソースコードを読むと、画像ファイルがRDBに格納され、Rubyを経由して返されていることがわかる。静的ファイルはアプリケーション部分を介さずにnginxから直接返すことができるはずなので、そのようにする。
+ソースコードを読むと、画像ファイルがRDBに格納され、Rubyを経由して返されていることがわかる。実際、スロークエリログで2番目に時間がかかっているクエリ 
 
-nginxの設定を変更し、 `/image/` 以下のリクエストは `/home/isucon/private_isu/webapp/public/image/` 以下からまずはファイルを探し、もしファイルが見つからなかったらアプリケーションサーバにリバースプロキシするように設定を変更する。
+```sql
+SELECT * FROM `posts` WHERE `id` = 3906`
+```
+
+もこの操作で使われている。
+
+静的ファイルはなるべくアプリケーション部分を介さずにnginxから直接返すようにする。nginxの設定を変更し、 `/image/` 以下のリクエストは `/home/isucon/private_isu/webapp/public/image/` 以下からまずはファイルを探し、もしファイルが見つからなかったらアプリケーションサーバにリバースプロキシするように設定を変更する。
 
 ```bash
 sudo nano /etc/nginx/sites-enabled/isucon.conf
@@ -251,7 +257,7 @@ server {
 }
 ```
 
-画像に関してRDBを全く使わないようにすることも可能ではあるが、実装が大変なので、ここではリクエストの度にRDBから `/home/isucon/private_isu/webapp/public/image/` 以下に画像ファイルをコピーすることで、ディスクをキャッシュのように使うことにする。 `app.rb` を以下のように変更する。
+画像に関してアプリとRDBを全く使わないようにすることも可能ではあるが、実装が大変なので、ここではリクエストの度にRDBから `/home/isucon/private_isu/webapp/public/image/` 以下に画像ファイルをコピーすることで、ディスクをキャッシュのように使うことにする。 `app.rb` を以下のように変更する。
 
 ```diff
 @@ -3,6 +3,7 @@ require 'mysql2'
@@ -308,10 +314,26 @@ alpでアクセスログを集計すると、 `image/` にかかる時間の割�
 sudo ./alp json --file /var/log/nginx/access.log --sort sum -r -m "^/image/\d+\.(jpg|png|gif)$,^/posts/\d+$,^/@\w+$"
 ```
 
+スロークエリログも集計しておこう。
+
+```bash
+sudo pt-query-digest /var/log/mysql/mysql-slow.log | tee digest_$(date +%Y%m%d%H%M).txt
+```
+
+画像取得のためにも使われていた、以前2番目に時間がかかっていたクエリ
+
+```sql
+SELECT * FROM `posts` WHERE `id` = 3906
+```
+
+も、はるか下方10番目まで下がっている。
+
+## `GET /` の改善
 
 
 
 
+TODO
 
 <!--
 
@@ -337,8 +359,6 @@ nginx error_log deubg
 -->
 
 
-
-TODO
 
 
 ## CloudFormationスタックを削除する
