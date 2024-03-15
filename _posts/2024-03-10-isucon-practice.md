@@ -323,7 +323,7 @@ sudo pt-query-digest /var/log/mysql/mysql-slow.log | tee digest_$(date +%Y%m%d%H
 画像取得のためにも使われていた、以前2番目に時間がかかっていたクエリ
 
 ```sql
-SELECT * FROM `posts` WHERE `id` = 3906
+SELECT * FROM `posts` WHERE `id` = 3906;
 ```
 
 も、はるか下方10番目まで下がっている。
@@ -334,10 +334,61 @@ SELECT * FROM `posts` WHERE `id` = 3906
 
 ```sql
 SELECT `id`, `user_id`, `body`, `created_at`, `mime` FROM `posts` ORDER BY `created_at` DESC;
-SELECT * FROM `users` WHERE `id` = 876
+SELECT * FROM `users` WHERE `id` = 876;
 ```
 
 がどちらもこのエンドポイントで使われているクエリである。
+
+### 全件取得の防止
+
+N+1問題を解消したいところではあるが、その前にまずは、 `SELECT` で`posts` を全件取得してからあとで20件に絞り込んでいるところを改善し、MySQLから20件のpostのみを返すように変更しよう。
+
+以下のような変更を加えて、MySQLから20件以下のみを返すようにする。（繰り返しが多くコードが汚くなってしまっている。viewか何かを使ってきれいにしたいが、今はパフォーマンスを上げることが目的なので妥協する。）
+
+```diff
+128,130c128
+<
+<           posts.push(post) if post[:user][:del_flg] == 0
+<           break if posts.length >= POSTS_PER_PAGE
+---
+>           posts.push(post)
+230c228
+<       results = db.query('SELECT `id`, `user_id`, `body`, `created_at`, `mime` FROM `posts` ORDER BY `created_at` DESC')
+---
+>       results = db.query("SELECT posts.`id`, `user_id`, `body`, posts.`created_at`, `mime` FROM `posts` JOIN users ON posts.user_id = users.id WHERE users.del_flg = 0 ORDER BY `created_at` DESC LIMIT #{POSTS_PER_PAGE}")
+245c243
+<       results = db.prepare('SELECT `id`, `user_id`, `body`, `mime`, `created_at` FROM `posts` WHERE `user_id` = ? ORDER BY `created_at` DESC').execute(
+---
+>       results = db.prepare("SELECT posts.`id`, `user_id`, `body`, posts.`created_at`, `mime` FROM `posts` JOIN users ON posts.user_id = users.id WHERE `user_id` = ? AND users.del_flg = 0 ORDER BY `created_at` DESC LIMIT #{POSTS_PER_PAGE}").execute(
+274c272
+<       results = db.prepare('SELECT `id`, `user_id`, `body`, `mime`, `created_at` FROM `posts` WHERE `created_at` <= ? ORDER BY `created_at` DESC').execute(
+---
+>       results = db.prepare("SELECT posts.`id`, `user_id`, `body`, posts.`created_at`, `mime` FROM `posts` JOIN users ON posts.user_id = users.id WHERE posts.created_at <= ? AND users.del_flg = 0 ORDER BY `created_at` DESC LIMIT #{POSTS_PER_PAGE}").execute(
+283c281
+<       results = db.prepare('SELECT * FROM `posts` WHERE `id` = ?').execute(
+---
+>       results = db.prepare("SELECT posts.`id`, `user_id`, `body`, imgdata, posts.`created_at`, `mime` FROM `posts` JOIN users ON posts.user_id = users.id WHERE posts.id = ? AND users.del_flg = 0").execute(
+```
+
+各種サービスを再起動し、ベンチマークを再実行する。
+
+```bash
+sudo rm /var/log/nginx/access.log && sudo systemctl restart nginx
+sudo rm /var/log/mysql/mysql-slow.log && sudo systemctl restart mysql
+sudo systemctl restart isu-ruby
+```
+
+```bash
+./bin/benchmarker -u userdata -t http://192.168.1.10
+```
+
+得点が伸びている。
+
+> {"pass":true,"score":43605,"success":41532,"fail":0,"messages":[]}
+
+
+
+
 
 TODO
 
