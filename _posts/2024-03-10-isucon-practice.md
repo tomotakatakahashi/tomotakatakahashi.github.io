@@ -386,8 +386,13 @@ sudo systemctl restart isu-ruby
 
 > {"pass":true,"score":43605,"success":41532,"fail":0,"messages":[]}
 
+`alp` を実行すると、依然として GET / が一番時間がかかっている。MySQLのスロークエリログを見ると、
 
+```sql
+SELECT posts.`id`, `user_id`, `body`, posts.`created_at`, `mime` FROM `posts` JOIN users ON posts.user_id = users.id WHERE users.del_flg = 0 ORDER BY `created_at` DESC LIMIT 20
+```
 
+が全体の40%の時間を占めており、rowも多く読み込まれているようである。
 
 
 TODO
