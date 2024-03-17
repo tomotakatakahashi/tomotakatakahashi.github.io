@@ -403,6 +403,23 @@ mysql > ALTER TABLE posts ADD INDEX created_at_idx(created_at DESC);
 mysql > EXPLAIN SELECT posts.`id`, `user_id`, `body`, posts.`created_at`, `mime` FROM `posts` JOIN users ON posts.user_id = users.id WHERE users.del_flg = 0 ORDER BY `created_at` DESC LIMIT 20;
 ```
 
+各種サービスを再起動し、ベンチマークを再実行する。ところでいままで画像ファイルのキャッシュを消していなかったので、ベンチマーク前に削除するようにしたほうがいいのではないだろうか。
+
+```bash
+sudo rm /var/log/nginx/access.log && sudo systemctl restart nginx
+sudo rm /var/log/mysql/mysql-slow.log && sudo systemctl restart mysql
+sudo systemctl restart isu-ruby
+rm private_isu/webapp/public/image/*
+```
+
+```bash
+./bin/benchmarker -u userdata -t http://192.168.1.10
+```
+
+スコアが伸びている。
+
+> {"pass":true,"score":59995,"success":57191,"fail":0,"messages":[]}
+
 
 
 
