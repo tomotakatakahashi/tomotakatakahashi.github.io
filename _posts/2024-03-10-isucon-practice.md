@@ -420,7 +420,19 @@ rm private_isu/webapp/public/image/*
 
 > {"pass":true,"score":59995,"success":57191,"fail":0,"messages":[]}
 
+`./alp` を再実行すると、依然として `GET /` が1位であるものの、2位以下との差が縮まっており、 `GET / ` の性能が改善されたことが窺える。
 
+MySQLのスロークエリログでは、以下の2つのクエリがほぼ同率1位になっている。
+
+```sql
+administrator command: Prepare;
+```
+
+```sql
+SELECT * FROM `users` WHERE `id` = 218;
+```
+
+`top` では、メモリ使用量には依然として余裕があり、CPU使用率はmysqldが100%、rubyが4 * 17%、nginxが7%程度が使われており、MySQLのスロークエリを改善するのがよさそうである。
 
 
 
