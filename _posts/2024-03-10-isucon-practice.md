@@ -541,9 +541,31 @@ bundle
 >         db.xquery(query, 1, id.to_i)
 ```
 
-bundle
-Gemfile
-app.rb.bak3
+各種サービスを再起動し、ベンチマークを実行しよう。
+
+```bash
+sudo rm /var/log/nginx/access.log && sudo systemctl restart nginx
+sudo rm /var/log/mysql/mysql-slow.log && sudo systemctl restart mysql
+sudo systemctl restart isu-ruby
+```
+
+```bash
+./bin/benchmarker -u userdata -t http://192.168.1.10
+```
+
+スコアが伸びている。
+
+> {"pass":true,"score":71506,"success":68490,"fail":0,"messages":[]}
+
+`top` コマンドの傾向には変化無し。 `alp` による傾向も変化無し。MySQLのスロークエリログの集計からは、「administrator command: Prepare」が消え、
+
+```sql
+SELECT * FROM `users` WHERE `id` = '907';
+```
+
+が1位のクエリになった。
+
+
 
 
 TODO
