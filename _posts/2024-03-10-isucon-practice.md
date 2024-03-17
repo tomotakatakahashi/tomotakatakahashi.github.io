@@ -434,8 +434,116 @@ SELECT * FROM `users` WHERE `id` = 218;
 `top` では、メモリ使用量には依然として余裕があり、CPU使用率はmysqldが100%、rubyが4 * 17%、nginxが7%程度が使われており、MySQLのスロークエリを改善するのがよさそうである。
 
 
-### Admin
+### prepared statementを削減
+「`administrator command: Prepare`」のほうは、[mysql2](https://github.com/brianmario/mysql2)でprepared statementを使っている部分を[mysql2-cs-bind](https://github.com/tagomoris/mysql2-cs-bind)を使ってwebapp側で処理することで、prepared statementを使うことを回避できるようである。（ただし、この変更がセキュアかどうかは不明）
 
+まずは `Gemfile` に以下の変更を加え、
+
+```diff
+9c9
+< gem "mysql2"
+---
+> gem "mysql2-cs-bind"
+```
+
+`bundle` で `mysql2-cs-bind` をインストールする。
+
+```bash
+bundle
+```
+
+その後、 `app.rb` の `db.prepare(q).execute(p)` を `db.xquery(q, p)` に書き換える。ただし、画像を保存しているクエリのみ、 mysql2-cs-bind からの
+
+> Encoding::CompatibilityError - incompatible character encodings: UTF-8 and ASCII-8BIT
+
+というエラーを回避するため、そのままにしている。
+
+```diff
+2c2
+< require 'mysql2'
+---
+> require 'mysql2-cs-bind'
+57c57
+<           db.prepare(s).execute
+---
+>           db.query(s)
+62c62
+<         user = db.prepare('SELECT * FROM users WHERE account_name = ? AND del_flg = 0').execute(account_name).first
+---
+>         user = db.xquery('SELECT * FROM users WHERE account_name = ? AND del_flg = 0', account_name).first
+96c96
+<           db.prepare('SELECT * FROM `users` WHERE `id` = ?').execute(
+---
+>           db.xquery('SELECT * FROM `users` WHERE `id` = ?',
+107c107
+<           post[:comment_count] = db.prepare('SELECT COUNT(*) AS `count` FROM `comments` WHERE `post_id` = ?').execute(
+---
+>           post[:comment_count] = db.xquery('SELECT COUNT(*) AS `count` FROM `comments` WHERE `post_id` = ?',
+115c115
+<           comments = db.prepare(query).execute(
+---
+>           comments = db.xquery(query,
+119c119
+<             comment[:user] = db.prepare('SELECT * FROM `users` WHERE `id` = ?').execute(
+---
+>             comment[:user] = db.xquery('SELECT * FROM `users` WHERE `id` = ?',
+125c125
+<           post[:user] = db.prepare('SELECT * FROM `users` WHERE `id` = ?').execute(
+---
+>           post[:user] = db.xquery('SELECT * FROM `users` WHERE `id` = ?',
+200c200
+<       user = db.prepare('SELECT 1 FROM users WHERE `account_name` = ?').execute(account_name).first
+---
+>       user = db.xquery('SELECT 1 FROM users WHERE `account_name` = ?', account_name).first
+208c208
+<       db.prepare(query).execute(
+---
+>       db.xquery(query,
+235c235
+<       user = db.prepare('SELECT * FROM `users` WHERE `account_name` = ? AND `del_flg` = 0').execute(
+---
+>       user = db.xquery('SELECT * FROM `users` WHERE `account_name` = ? AND `del_flg` = 0',
+243c243
+<       results = db.prepare("SELECT posts.`id`, `user_id`, `body`, posts.`created_at`, `mime` FROM `posts` JOIN users ON posts.user_id = users.id WHERE `user_id` = ? AND users.del_flg = 0 ORDER BY `created_at` DESC LIMIT #{POSTS_PER_PAGE}").execute(
+---
+>       results = db.xquery("SELECT posts.`id`, `user_id`, `body`, posts.`created_at`, `mime` FROM `posts` JOIN users ON posts.user_id = users.id WHERE `user_id` = ? AND users.del_flg = 0 ORDER BY `created_at` DESC LIMIT #{POSTS_PER_PAGE}",
+248c248
+<       comment_count = db.prepare('SELECT COUNT(*) AS count FROM `comments` WHERE `user_id` = ?').execute(
+---
+>       comment_count = db.xquery('SELECT COUNT(*) AS count FROM `comments` WHERE `user_id` = ?',
+252c252
+<       post_ids = db.prepare('SELECT `id` FROM `posts` WHERE `user_id` = ?').execute(
+---
+>       post_ids = db.xquery('SELECT `id` FROM `posts` WHERE `user_id` = ?',
+260c260
+<         commented_count = db.prepare("SELECT COUNT(*) AS count FROM `comments` WHERE `post_id` IN (#{placeholder})").execute(
+---
+>         commented_count = db.xquery("SELECT COUNT(*) AS count FROM `comments` WHERE `post_id` IN (#{placeholder})",
+272c272
+<       results = db.prepare("SELECT posts.`id`, `user_id`, `body`, posts.`created_at`, `mime` FROM `posts` JOIN users ON posts.user_id = users.id WHERE posts.created_at <= ? AND users.del_flg = 0 ORDER BY `created_at` DESC LIMIT #{POSTS_PER_PAGE}").execute(
+---
+>       results = db.xquery("SELECT posts.`id`, `user_id`, `body`, posts.`created_at`, `mime` FROM `posts` JOIN users ON posts.user_id = users.id WHERE posts.created_at <= ? AND users.del_flg = 0 ORDER BY `created_at` DESC LIMIT #{POSTS_PER_PAGE}",
+281c281
+<       results = db.prepare("SELECT posts.`id`, `user_id`, `body`, imgdata, posts.`created_at`, `mime` FROM `posts` JOIN users ON posts.user_id = users.id WHERE posts.id = ? AND users.del_flg = 0").execute(
+---
+>       results = db.xquery("SELECT posts.`id`, `user_id`, `body`, imgdata, posts.`created_at`, `mime` FROM `posts` JOIN users ON posts.user_id = users.id WHERE posts.id = ? AND users.del_flg = 0",
+347c347
+<       post = db.prepare('SELECT * FROM `posts` WHERE `id` = ?').execute(params[:id].to_i).first
+---
+>       post = db.xquery('SELECT * FROM `posts` WHERE `id` = ?', params[:id].to_i).first
+381c381
+<       db.prepare(query).execute(
+---
+>       db.xquery(query,
+424c424
+<         db.prepare(query).execute(1, id.to_i)
+---
+>         db.xquery(query, 1, id.to_i)
+```
+
+bundle
+Gemfile
+app.rb.bak3
 
 
 TODO
