@@ -392,7 +392,20 @@ sudo systemctl restart isu-ruby
 SELECT posts.`id`, `user_id`, `body`, posts.`created_at`, `mime` FROM `posts` JOIN users ON posts.user_id = users.id WHERE users.del_flg = 0 ORDER BY `created_at` DESC LIMIT 20
 ```
 
-が全体の40%の時間を占めており、rowも多く読み込まれているようである。
+が全体の40%の時間を占めており、rowも多く読み込まれているようである。CPU使用率もmysqldの割合が大きくなっている。
+
+`posts` テーブルの `created_at` 列に降順インデックスを追加する。すると、 `EXPLAIN` の `rows` も `8769` から `199` に削減される。
+
+```bash
+mysql -u isuconp -p isuconp
+mysql > EXPLAIN SELECT posts.`id`, `user_id`, `body`, posts.`created_at`, `mime` FROM `posts` JOIN users ON posts.user_id = users.id WHERE users.del_flg = 0 ORDER BY `created_at` DESC LIMIT 20;
+mysql > ALTER TABLE posts ADD INDEX created_at_idx(created_at DESC);
+mysql > EXPLAIN SELECT posts.`id`, `user_id`, `body`, posts.`created_at`, `mime` FROM `posts` JOIN users ON posts.user_id = users.id WHERE users.del_flg = 0 ORDER BY `created_at` DESC LIMIT 20;
+```
+
+
+
+
 
 
 TODO
