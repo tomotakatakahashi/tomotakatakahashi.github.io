@@ -566,9 +566,54 @@ SELECT * FROM `users` WHERE `id` = '907';
 
 が1位のクエリになった。
 
-## N+1問題の解消
+## `make_posts` にある `posts` と `users` のN+1問題の解消
 
 前述のクエリ自体は、すでにインデックスも使用されており、高速化の余地は小さい。ただし、 `make_posts` 関数がN+1問題を抱えており、前述のクエリを繰り返し呼んでいるので、クエリの呼び出し回数を減らせることが期待できる。
+
+まずは `make_posts` 以下での `posts` と `users` の間にあるN+1問題を解消しよう。
+
+`view/` ディレクトリ以下のソースコードを確認すると、 `post[:user]` および `comment[:user]` の属性は `[:account_name]` のみが使われていることがわかるため、 `users` の全ての列を追加する必要はない。
+
+```diff
+125,127c125
+<           post[:user] = db.xquery('SELECT * FROM `users` WHERE `id` = ?',
+<             post[:user_id]
+<           ).first
+---
+>           post[:user] = { account_name: post[:account_name], }
+228c226
+<       results = db.query("SELECT posts.`id`, `user_id`, `body`, posts.`created_at`, `mime` FROM `posts` JOIN users ON posts.user_id = users.id WHERE users.del_flg = 0 ORDER BY `created_at` DESC LIMIT #{POSTS_PER_PAGE}")
+---
+>       results = db.query("SELECT posts.`id`, `user_id`, `body`, posts.`created_at`, `mime`, users.account_name FROM `posts` JOIN users ON posts.user_id = users.id WHERE users.del_flg = 0 ORDER BY `created_at` DESC LIMIT #{POSTS_PER_PAGE}")
+243c241
+<       results = db.xquery("SELECT posts.`id`, `user_id`, `body`, posts.`created_at`, `mime` FROM `posts` JOIN users ON posts.user_id = users.id WHERE `user_id` = ? AND users.del_flg = 0 ORDER BY `created_at` DESC LIMIT #{POSTS_PER_PAGE}",
+---
+>       results = db.xquery("SELECT posts.`id`, `user_id`, `body`, posts.`created_at`, `mime`, users.account_name FROM `posts` JOIN users ON posts.user_id = users.id WHERE `user_id` = ? AND users.del_flg = 0 ORDER BY `created_at` DESC LIMIT #{POSTS_PER_PAGE}",
+272c270
+<       results = db.xquery("SELECT posts.`id`, `user_id`, `body`, posts.`created_at`, `mime` FROM `posts` JOIN users ON posts.user_id = users.id WHERE posts.created_at <= ? AND users.del_flg = 0 ORDER BY `created_at` DESC LIMIT #{POSTS_PER_PAGE}",
+---
+>       results = db.xquery("SELECT posts.`id`, `user_id`, `body`, posts.`created_at`, `mime`, users.account_name FROM `posts` JOIN users ON posts.user_id = users.id WHERE posts.created_at <= ? AND users.del_flg = 0 ORDER BY `created_at` DESC LIMIT #{POSTS_PER_PAGE}",
+281c279
+<       results = db.xquery("SELECT posts.`id`, `user_id`, `body`, imgdata, posts.`created_at`, `mime` FROM `posts` JOIN users ON posts.user_id = users.id WHERE posts.id = ? AND users.del_flg = 0",
+---
+>       results = db.xquery("SELECT posts.`id`, `user_id`, `body`, imgdata, posts.`created_at`, `mime`, users.account_name FROM `posts` JOIN users ON posts.user_id = users.id WHERE posts.id = ? AND users.del_flg = 0",
+```
+
+各種サービスを再起動してベンチマークを実行すると、スコアが伸びている。
+
+```bash
+sudo rm /var/log/nginx/access.log && sudo systemctl restart nginx
+sudo rm /var/log/mysql/mysql-slow.log && sudo systemctl restart mysql
+sudo systemctl restart isu-ruby
+```
+
+```bash
+./bin/benchmarker -u userdata -t http://192.168.1.10
+```
+
+> {"pass":true,"score":80486,"success":77166,"fail":0,"messages":[]}
+
+
 
 
 
