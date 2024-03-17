@@ -435,7 +435,7 @@ SELECT * FROM `users` WHERE `id` = 218;
 `top` では、メモリ使用量には依然として余裕があり、CPU使用率はmysqldが100%、rubyが4 * 17%、nginxが7%程度が使われており、MySQLのスロークエリを改善するのがよさそうである。
 
 
-### prepared statementを削減
+## prepared statementを削減
 「`administrator command: Prepare`」のほうは、[mysql2](https://github.com/brianmario/mysql2)でprepared statementを使っている部分を[mysql2-cs-bind](https://github.com/tagomoris/mysql2-cs-bind)を使ってwebapp側で処理することで、prepared statementを使うことを回避できるようである。（ただし、この変更がセキュアかどうかは不明）
 
 まずは `Gemfile` に以下の変更を加え、
@@ -566,7 +566,11 @@ SELECT * FROM `users` WHERE `id` = '907';
 
 が1位のクエリになった。
 
-### 
+## N+1問題の解消
+
+前述のクエリ自体は、すでにインデックスも使用されており、高速化の余地は小さい。ただし、 `make_posts` 関数がN+1問題を抱えており、前述のクエリを繰り返し呼んでいるので、クエリの呼び出し回数を減らせることが期待できる。
+
+
 
 
 TODO
