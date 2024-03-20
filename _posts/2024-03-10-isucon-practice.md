@@ -644,7 +644,73 @@ sudo systemctl restart isu-ruby
 
 > {"pass":true,"score":100571,"success":96944,"fail":0,"messages":[]}
 
+依然としてMySQLの使用率が高く、スロークエリログを見ると、以下のクエリが30%の時間を使っている。このクエリは `make_posts` にある `posts` と `comments` の間のN+1問題を抱えているクエリである。
 
+```sql
+SELECT comments.comment, users.account_name FROM `comments` JOIN users ON comments.user_id = users.id WHERE `post_id` = '7382' ORDER BY comments.`created_at` DESC LIMIT 3;
+```
+
+## `make_posts` にある `posts` と `comments` のN+1問題の解消
+
+N+1問題を解消しよう。各postに対するコメント数を求める部分と、各postに対するコメントを取得する部分がある。まずは後者を直そう。
+
+```diff
+104a105,112
+>         if all_comments
+>           query = "SELECT ranked.post_id, ranked.comment, users.account_name FROM (SELECT *, RANK() OVER (PARTITION BY post_id ORDER BY created_at DESC) AS rank_new FROM comments) ranked JOIN users ON ranked.use\
+r_id = users.id AND post_id IN (?) ORDER BY ranked.created_at DESC"
+>         else
+>           query = "SELECT ranked.post_id, ranked.comment, users.account_name FROM (SELECT *, RANK() OVER (PARTITION BY post_id ORDER BY created_at DESC) AS rank_new FROM comments) ranked JOIN users ON ranked.use\
+r_id = users.id WHERE rank_new <= 3 AND post_id IN (?) ORDER BY ranked.created_at DESC"
+>         end
+>
+>         comments = db.xquery(query, results.map { |post| post[:id] })
+>
+110,121c118,122
+<
+<           query = 'SELECT * FROM `comments` WHERE `post_id` = ? ORDER BY `created_at` DESC'
+<           unless all_comments
+<             query += ' LIMIT 3'
+<           end
+<           comments = db.xquery(query,
+<             post[:id]
+<           ).to_a
+<           comments.each do |comment|
+<             comment[:user] = db.xquery('SELECT * FROM `users` WHERE `id` = ?',
+<               comment[:user_id]
+<             ).first
+---
+>           post_comments = []
+>           comments.to_a.each do |comment|
+>             if comment[:post_id] == post[:id]
+>               post_comments.push({ comment: comment[:comment], user: { account_name: comment[:account_name] } })
+>             end
+123c124
+<           post[:comments] = comments.reverse
+---
+>           post[:comments] = post_comments
+```
+
+各種サービスを再起動し、ベンチマークを実行すると、スコアが上がっている。
+
+```bash
+sudo rm /var/log/nginx/access.log && sudo systemctl restart nginx
+sudo rm /var/log/mysql/mysql-slow.log && sudo systemctl restart mysql
+sudo systemctl restart isu-ruby
+```
+
+```bash
+./bin/benchmarker -u userdata -t http://192.168.1.10
+```
+
+> {"pass":true,"score":122521,"success":118421,"fail":0,"messages":[]}
+
+
+
+
+
+
+app.rb.bak5
 
 
 
