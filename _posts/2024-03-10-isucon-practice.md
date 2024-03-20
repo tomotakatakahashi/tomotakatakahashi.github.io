@@ -652,7 +652,7 @@ SELECT comments.comment, users.account_name FROM `comments` JOIN users ON commen
 
 ## `make_posts` にある `posts` と `comments` のN+1問題の解消
 
-N+1問題を解消しよう。各postに対するコメント数を求める部分と、各postに対するコメントを取得する部分がある。まずは後者を直そう。
+N+1問題を解消しよう。各postに対するコメント数を求める部分と、各postに対するコメントを取得する部分がある。まずは後者を直そう。 `app.rb` を修正する。計算量O(MN)の部分ができてしまっているが、私がRubyに詳しくなくてプログラムを書くのが難しいのと、当面はボトルネックにならないはずなので今は妥協する。
 
 ```diff
 104a105,112
@@ -705,12 +705,39 @@ sudo systemctl restart isu-ruby
 
 > {"pass":true,"score":122521,"success":118421,"fail":0,"messages":[]}
 
+スロークエリログを見ると各postのコメント数を数えるN+1問題が一番時間がかかるようになっているので、そこを直す。こちらもアルゴリズムが計算量O(MN)になってしまっているが、直すのは後にしよう。
 
+```diff
+112a113,114
+>         comment_counts = db.xquery("SELECT post_id, COUNT(*) AS `count` FROM `comments` WHERE post_id IN (?) GROUP BY post_id", results.map { |post| post[:id] })
+>
+115,117c117,121
+<           post[:comment_count] = db.xquery('SELECT COUNT(*) AS `count` FROM `comments` WHERE `post_id` = ?',
+<             post[:id]
+<           ).first[:count]
+---
+>           comment_counts.to_a.each do |comment_count|
+>             if comment_count[:post_id] == post[:id]
+>               post[:comment_count] = comment_count[:count]
+>             end
+>           end
+```
 
+サービスを再起動して、ベンチマークを取ると、スコアが上がっている。
 
+```bash
+sudo rm /var/log/nginx/access.log && sudo systemctl restart nginx
+sudo rm /var/log/mysql/mysql-slow.log && sudo systemctl restart mysql
+sudo systemctl restart isu-ruby
+```
 
+```bash
+./bin/benchmarker -u userdata -t http://192.168.1.10
+```
 
-app.rb.bak5
+> {"pass":true,"score":153057,"success":148409,"fail":0,"messages":[]}
+
+CPU使用率は、mysqldが70%、rubyが4 * 17%、nginxが14% + 5%くらいで、MySQLからボトルネックが移動しつつある。
 
 
 
