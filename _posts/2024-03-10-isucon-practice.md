@@ -739,6 +739,25 @@ sudo systemctl restart isu-ruby
 
 CPU使用率は、mysqldが70%、rubyが4 * 17%、nginxが14% + 5%くらいで、MySQLからボトルネックが移動しつつある。
 
+`alp` でアクセスログを集計すると、 `GET /` は2位に落ち、 `POST /login` が1位に躍り出ている。
+
+```bash
+sudo ./alp json --file /var/log/nginx/access.log --sort sum -r -m "^/image/\d+\.(jpg|png|gif)$,^/posts/\d+$,^/@\w+$"
+```
+
+MySQLのスロークエリログを集計すると、1位と2位のクエリがそれぞれ以下になっている。
+
+```sql
+SELECT COUNT(*) AS count FROM `comments` WHERE `user_id` = '369';
+SELECT posts.`id`, `user_id`, `body`, posts.`created_at`, `mime`, users.account_name FROM `posts` JOIN users ON posts.user_id = users.id WHERE `user_id` = '63' AND users.del_flg = 0 ORDER BY `created_at` DESC LIMIT 20;
+```
+
+それぞれ、Rows examinedが100k、10k行になっており、インデックスが効いていないことが観察される。
+
+
+## 
+
+
 
 
 TODO
