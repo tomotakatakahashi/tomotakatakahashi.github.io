@@ -754,14 +754,82 @@ SELECT posts.`id`, `user_id`, `body`, posts.`created_at`, `mime`, users.account_
 
 それぞれ、Rows examinedが100k、10k行になっており、インデックスが効いていないことが観察される。
 
+## stackprofによるprofiling
 
-## 
+`POST /login` のボトルネックを探すため、[stackprof](https://github.com/tmm1/stackprof)を用いてprofilingする。
 
+`Gemfile` に以下の行を追加する。
+
+```
+gem 'stackprof'
+```
+
+`app.rb` に以下の行を追加する。なお、intervalのデフォルト値は1000（μs）になっているが、それだとボトルネックでない部分が検出されてしまうようだ。
+
+```diff
+6a7
+> require 'stackprof'
+9a11,14
+>     use StackProf::Middleware, enabled: true,
+>                                mode: :wall,
+>                                interval: 100,
+>                                save_every: 5
+```
+
+`bundle` でGemをインストールする。
+
+```bash
+bundle
+```
+
+stackprofが出力するファイルを削除し、各種サービスを再起動する。
+
+```bash
+rm private_isu/webapp/ruby/tmp/stackprof-wall-*.dmp
+sudo rm /var/log/nginx/access.log && sudo systemctl restart nginx
+sudo rm /var/log/mysql/mysql-slow.log && sudo systemctl restart mysql
+sudo systemctl restart isu-ruby
+```
+
+ベンチマークを実行する。
+
+```bash
+./bin/benchmarker -u userdata -t http://192.168.1.10
+```
+
+プロファイラを入れた影響で、スコアは下がる。
+
+> {"pass":true,"score":91964,"success":88927,"fail":0,"messages":[]}
+
+プロファイリングした結果を集計する。
+
+```bash
+stackprof private_isu/webapp/ruby/tmp/stackprof-wall-*.dump
+```
+
+すると、以下の行が突出して時間がかかっていることがわかる。
+
+```
+     42523  (47.2%)       42523  (47.2%)     Kernel#`
+```
+
+この行に着目して再びプロファイリング結果を集計すると、 `Isuconp::App#digest` で呼ばれている外部コマンド呼び出しに時間がかかっていることがわかる。
+
+```bash
+stackprof private_isu/webapp/ruby/tmp/stackprof-wall-*.dump --method 'Kernel#`'
+```
+
+
+> Kernel#` (<cfunc>:1)
+>   samples:  42523 self (47.2%)  /   42523 total (47.2%)
+>   callers:
+>     42523  (  100.0%)  Isuconp::App#digest
+>   code:
+>         SOURCE UNAVAILABLE
 
 
 
 TODO: 続き
-TODO: Ruby profiler
 
 
 <!--
