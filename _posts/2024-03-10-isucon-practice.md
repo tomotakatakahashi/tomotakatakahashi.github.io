@@ -859,6 +859,9 @@ sudo systemctl restart isu-ruby
 
 > {"pass":true,"score":125407,"success":120420,"fail":0,"messages":[]}
 
+なお、開催時のISUCONのルールによっては、パスワードをハッシュ化せずに、平文または平文に類似した形で保存することで、さらなる高速化が狙えるようだ。（もちろん実運用されるアプリケーションでやってはいけない）
+
+
 `alp` で集計すると再び `GET /` が1位になっている。stackprofで集計すると `Isuconp::App#make_posts` や `Array#each` に時間がかかっていることがわかる。
 
 ## `make_posts` の O(MN) の解消
