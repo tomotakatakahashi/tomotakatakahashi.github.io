@@ -861,8 +861,52 @@ sudo systemctl restart isu-ruby
 
 なお、開催時のISUCONのルールによっては、パスワードをハッシュ化せずに、平文または平文に類似した形で保存することで、さらなる高速化が狙えるようだ。（もちろん実運用されるアプリケーションでやってはいけない）
 
-
 `alp` で集計すると再び `GET /` が1位になっている。stackprofで集計すると `Isuconp::App#make_posts` や `Array#each` に時間がかかっていることがわかる。
+
+
+## No space left on device
+
+作業を進めていると、「No space left on device」と表示されてアプリが正常に動作しなくなることがある。MySQLのバイナリログを消したり、ディスク上に保存した画像ファイルを削除したり、stackprofのファイルを消すことで解消できるはずだ。MySQLのバイナリログを削除するには、
+
+```
+mysql -u isuconp -p isuconp
+mysql> PURGE BINARY LOGS BEFORE NOW();
+```
+
+とすればよい。
+
+
+> {"pass":true,"score":193580,"success":186316,"fail":0,"messages":[]}
+
+
+
+TODO: 続き
+
+
+<!--
+
+何か設定が間違っているが、 `/var/log/nginx/error.log` を開いても何も書いていないので、 `/etc/nginx/nginx.conf` を以下のように書き換える。
+
+```diff
+-        error_log /var/log/nginx/error.log;
++        error_log /var/log/nginx/error.log debug;
+```
+
+その後、nginxを再起動し、error.logを見ると、
+
+```bash
+sudo systemctl restart nginx
+sudo less /var/log/nginx/error.log
+```
+
+
+
+mkdir webapp/public/image
+nginx error_log deubg
+
+-->
+
+<!--
 
 ## `make_posts` の O(MN) の解消
 
@@ -919,50 +963,7 @@ sudo systemctl restart isu-ruby
 ```
 
 > {"pass":true,"score":119208,"success":114476,"fail":0,"messages":[]}
-
-
-## No space left on device
-
-作業を進めていると、「No space left on device」と表示されてアプリが正常に動作しなくなることがある。MySQLのバイナリログを消したり、ディスク上に保存した画像ファイルを削除したり、stackprofのファイルを消すことで解消できるはずだ。MySQLのバイナリログを削除するには、
-
-```
-mysql -u isuconp -p isuconp
-mysql> PURGE BINARY LOGS BEFORE NOW();
-```
-
-とすればよい。
-
-
-> {"pass":true,"score":193580,"success":186316,"fail":0,"messages":[]}
-
-
-
-TODO: 続き
-
-
-<!--
-
-何か設定が間違っているが、 `/var/log/nginx/error.log` を開いても何も書いていないので、 `/etc/nginx/nginx.conf` を以下のように書き換える。
-
-```diff
--        error_log /var/log/nginx/error.log;
-+        error_log /var/log/nginx/error.log debug;
-```
-
-その後、nginxを再起動し、error.logを見ると、
-
-```bash
-sudo systemctl restart nginx
-sudo less /var/log/nginx/error.log
-```
-
-
-
-mkdir webapp/public/image
-nginx error_log deubg
-
 -->
-
 
 
 
