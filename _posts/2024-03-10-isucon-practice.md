@@ -787,7 +787,7 @@ bundle
 stackprofが出力するファイルを削除し、各種サービスを再起動する。
 
 ```bash
-rm private_isu/webapp/ruby/tmp/stackprof-wall-*.dump
+rm private_isu/webapp/ruby/tmp/stackprof-*.dump
 sudo rm /var/log/nginx/access.log && sudo systemctl restart nginx
 sudo rm /var/log/mysql/mysql-slow.log && sudo systemctl restart mysql
 sudo systemctl restart isu-ruby
@@ -847,7 +847,7 @@ Kernel#` (<cfunc>:1)
 各種サービスを再起動し、ベンチマークを実行すると、スコアが上がる。
 
 ```bash
-rm private_isu/webapp/ruby/tmp/stackprof-wall-*.dump
+rm private_isu/webapp/ruby/tmp/stackprof-*.dump
 sudo rm /var/log/nginx/access.log && sudo systemctl restart nginx
 sudo rm /var/log/mysql/mysql-slow.log && sudo systemctl restart mysql
 sudo systemctl restart isu-ruby
@@ -907,14 +907,18 @@ sudo systemctl restart isu-ruby
 >         id_to_post.values
 ```
 
-> {"pass":true,"score":127762,"success":122665,"fail":0,"messages":[]}
-
-```
-rm private_isu/webapp/ruby/tmp/stackprof-wall-*.dump
+```bash
+rm private_isu/webapp/ruby/tmp/stackprof-*.dump
 sudo rm /var/log/nginx/access.log && sudo systemctl restart nginx
 sudo rm /var/log/mysql/mysql-slow.log && sudo systemctl restart mysql
 sudo systemctl restart isu-ruby
 ```
+
+```bash
+./bin/benchmarker -u userdata -t http://192.168.1.10
+```
+
+> {"pass":true,"score":119208,"success":114476,"fail":0,"messages":[]}
 
 
 ## No space left on device
