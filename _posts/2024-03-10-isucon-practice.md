@@ -861,8 +861,7 @@ sudo systemctl restart isu-ruby
 
 なお、開催時のISUCONのルールによっては、パスワードをハッシュ化せずに、平文または平文に類似した形で保存することで、さらなる高速化が狙えるようだ。（もちろん実運用されるアプリケーションでやってはいけない）
 
-`alp` で集計すると再び `GET /` が1位になっている。stackprofで集計すると `Isuconp::App#make_posts` や `Array#each` に時間がかかっていることがわかる。
-
+`alp` で集計すると再び `GET /` が1位になっている。stackprofで集計すると `Mysql2::Client#_query` で27%、 `String#gsub` で10%の時間がかかっている。MySQLのスロークエリを集計すると、遅いクエリは変わっていない。
 
 ## No space left on device
 
