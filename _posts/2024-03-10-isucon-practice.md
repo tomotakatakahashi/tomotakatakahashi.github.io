@@ -868,16 +868,68 @@ sudo systemctl restart isu-ruby
 
 `make_posts` 中に前に作ってしまったO(MN)の非効率なアルゴリズムを改善しよう。
 
+```diff
+120c120
+<         posts = []
+---
+>         id_to_post = {}
+122,133c122,129
+<           comment_counts.to_a.each do |comment_count|
+<             if comment_count[:post_id] == post[:id]
+<               post[:comment_count] = comment_count[:count]
+<             end
+<           end
+<           post_comments = []
+<           comments.to_a.each do |comment|
+<             if comment[:post_id] == post[:id]
+<               post_comments.push({ comment: comment[:comment], user: { account_name: comment[:account_name] } })
+<             end
+<           end
+<           post[:comments] = post_comments
+---
+>           id_to_post[post[:id]] = post
+>           id_to_post[post[:id]][:comments] = []
+>           id_to_post[post[:id]][:user] = { account_name: post[:account_name] }
+>         end
+>
+>         comment_counts.to_a.each do |comment_count|
+>           id_to_post[comment_count[:post_id]][:comment_count] = comment_count[:count]
+>         end
+135,136c131,132
+<           post[:user] = { account_name: post[:account_name], }
+<           posts.push(post)
+---
+>         comments.to_a.each do |comment|
+>           id_to_post[comment[:post_id]][:comments].push({ comment: comment[:comment], user: { account_name: comment[:account_name] } })
+139c135
+<         posts
+---
+>         id_to_post.values
+```
 
 > {"pass":true,"score":127762,"success":122665,"fail":0,"messages":[]}
 
-
-
-no space left on device
-
-```sql
-PURGE BINARY LOGS BEFORE NOW();
 ```
+rm private_isu/webapp/ruby/tmp/stackprof-wall-*.dump
+sudo rm /var/log/nginx/access.log && sudo systemctl restart nginx
+sudo rm /var/log/mysql/mysql-slow.log && sudo systemctl restart mysql
+sudo systemctl restart isu-ruby
+```
+
+
+## No space left on device
+
+作業を進めていると、「No space left on device」と表示されてアプリが正常に動作しなくなることがある。MySQLのバイナリログを消したり、ディスク上に保存した画像ファイルを削除したり、stackprofのファイルを消すことで解消できるはずだ。MySQLのバイナリログを削除するには、
+
+```
+mysql -u isuconp -p isuconp
+mysql> PURGE BINARY LOGS BEFORE NOW();
+```
+
+とすればよい。
+
+
+> {"pass":true,"score":193580,"success":186316,"fail":0,"messages":[]}
 
 
 
