@@ -406,6 +406,8 @@ mysql > EXPLAIN SELECT posts.`id`, `user_id`, `body`, posts.`created_at`, `mime`
 
 各種サービスを再起動し、ベンチマークを再実行する。ところでいままで画像ファイルのキャッシュを消していなかったので、ベンチマーク前に削除するようにしたほうがいいのではないだろうか。といいつつ、消しても消さなくてもベンチマーク結果がほぼ同じだったのでそのままにする。
 
+TODO: 消さないとディスクいっぱいになりやすいかも
+
 ```bash
 sudo rm /var/log/nginx/access.log && sudo systemctl restart nginx
 sudo rm /var/log/mysql/mysql-slow.log && sudo systemctl restart mysql
@@ -874,8 +876,37 @@ mysql> PURGE BINARY LOGS BEFORE NOW();
 
 とすればよい。
 
+TODO: 保存しないようにしないとディスクが……
 
-> {"pass":true,"score":193580,"success":186316,"fail":0,"messages":[]}
+
+## `comments` テーブルにインデックスを貼る
+
+`comments` テーブルの `user_id` 列にインデックスを追加することで、 `EXPLAIN` したときの `rows` が10万行程度から100行程度に減少する。
+
+```
+mysql -u isuconp -p isuconp
+mysql> EXPLAIN SELECT COUNT(*) AS count FROM `comments` WHERE `user_id` = '369';
+mysql> SHOW CREATE TABLE comments;
+mysql> ALTER TABLE comments ADD INDEX user_id_idx (user_id);
+mysql> SHOW CREATE TABLE comments;
+mysql> EXPLAIN SELECT COUNT(*) AS count FROM `comments` WHERE `user_id` = '369';
+mysql> exit;
+```
+
+```bash
+rm private_isu/webapp/ruby/tmp/stackprof-*.dump
+sudo rm /var/log/nginx/access.log && sudo systemctl restart nginx
+sudo rm /var/log/mysql/mysql-slow.log && sudo systemctl restart mysql
+sudo systemctl restart isu-ruby
+```
+
+```bash
+./bin/benchmarker -u userdata -t http://192.168.1.10
+```
+
+
+
+
 
 
 
