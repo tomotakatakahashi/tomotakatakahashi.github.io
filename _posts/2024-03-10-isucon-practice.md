@@ -766,6 +766,8 @@ gem 'stackprof'
 
 `app.rb` に以下の行を追加する。なお、intervalのデフォルト値は1000（μs）になっているが、それだとボトルネックでない部分が検出されてしまうようだ。
 
+TODO: wall -> cpu
+
 ```diff
 6a7
 > require 'stackprof'
@@ -785,7 +787,7 @@ bundle
 stackprofが出力するファイルを削除し、各種サービスを再起動する。
 
 ```bash
-rm private_isu/webapp/ruby/tmp/stackprof-wall-*.dmp
+rm private_isu/webapp/ruby/tmp/stackprof-wall-*.dump
 sudo rm /var/log/nginx/access.log && sudo systemctl restart nginx
 sudo rm /var/log/mysql/mysql-slow.log && sudo systemctl restart mysql
 sudo systemctl restart isu-ruby
@@ -819,13 +821,60 @@ stackprof private_isu/webapp/ruby/tmp/stackprof-wall-*.dump
 stackprof private_isu/webapp/ruby/tmp/stackprof-wall-*.dump --method 'Kernel#`'
 ```
 
+```
+Kernel#` (<cfunc>:1)
+  samples:  42523 self (47.2%)  /   42523 total (47.2%)
+  callers:
+    42523  (  100.0%)  Isuconp::App#digest
+  code:
+        SOURCE UNAVAILABLE
+```
 
-> Kernel#` (<cfunc>:1)
->   samples:  42523 self (47.2%)  /   42523 total (47.2%)
->   callers:
->     42523  (  100.0%)  Isuconp::App#digest
->   code:
->         SOURCE UNAVAILABLE
+## `digest` の高速化
+
+外部コマンド呼び出しを止めて、RubyのOpenSSLライブラリを使うように変更する。
+
+```diff
+7a8
+> require 'openssl'
+87,88c88
+<         # opensslのバージョンによっては (stdin)= というのがつくので取る
+<         `printf "%s" #{Shellwords.shellescape(src)} | openssl dgst -sha512 | sed 's/^.*= //'`.strip
+---
+>         return OpenSSL::Digest::SHA512.hexdigest(src)
+```
+
+各種サービスを再起動し、ベンチマークを実行すると、スコアが上がる。
+
+```bash
+rm private_isu/webapp/ruby/tmp/stackprof-wall-*.dump
+sudo rm /var/log/nginx/access.log && sudo systemctl restart nginx
+sudo rm /var/log/mysql/mysql-slow.log && sudo systemctl restart mysql
+sudo systemctl restart isu-ruby
+```
+
+```bash
+./bin/benchmarker -u userdata -t http://192.168.1.10
+```
+
+> {"pass":true,"score":125407,"success":120420,"fail":0,"messages":[]}
+
+`alp` で集計すると再び `GET /` が1位になっている。stackprofで集計すると `Isuconp::App#make_posts` や `Array#each` に時間がかかっていることがわかる。
+
+## `make_posts` の O(MN) の解消
+
+`make_posts` 中に前に作ってしまったO(MN)の非効率なアルゴリズムを改善しよう。
+
+
+> {"pass":true,"score":127762,"success":122665,"fail":0,"messages":[]}
+
+
+
+no space left on device
+
+```sql
+PURGE BINARY LOGS BEFORE NOW();
+```
 
 
 
