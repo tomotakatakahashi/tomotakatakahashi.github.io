@@ -918,6 +918,9 @@ mysql> EXPLAIN SELECT posts.`id`, `user_id`, `body`, posts.`created_at`, `mime`,
 
 explainとslow logの行数は一般には一致しない
 
+> {"pass":true,"score":150649,"success":144327,"fail":0,"messages":[]}
+
+
 
 TODO: 続き
 
