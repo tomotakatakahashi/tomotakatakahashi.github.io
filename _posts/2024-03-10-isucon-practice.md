@@ -904,10 +904,19 @@ sudo systemctl restart isu-ruby
 ./bin/benchmarker -u userdata -t http://192.168.1.10
 ```
 
+> {"pass":true,"score":126353,"success":121038,"fail":0,"messages":[]}
 
+## 
+続いて、もう一つのクエリでもインデックスが効くようにする。
 
+```
+mysql -u isoconp -p isuconp
+mysql> EXPLAIN SELECT posts.`id`, `user_id`, `body`, posts.`created_at`, `mime`, users.account_name FROM `posts` JOIN users ON posts.user_id = users.id WHERE `user_id` = '525' AND users.del_flg = 0 ORDER BY `created_at` DESC LIMIT 20;
+mysql> ALTER TABLE posts ADD INDEX user_created_idx (user_id, created_at DESC);
+mysql> EXPLAIN SELECT posts.`id`, `user_id`, `body`, posts.`created_at`, `mime`, users.account_name FROM `posts` JOIN users ON posts.user_id = users.id WHERE `user_id` = '525' AND users.del_flg = 0 ORDER BY `created_at` DESC LIMIT 20;
+```
 
-
+explainとslow logの行数は一般には一致しない
 
 
 TODO: 続き
