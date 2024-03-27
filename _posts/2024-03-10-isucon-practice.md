@@ -914,7 +914,12 @@ mysql -u isoconp -p isuconp
 mysql> ALTER TABLE posts ADD INDEX user_created_idx (user_id, created_at DESC);
 ```
 
-explainとslow logの行数は一般には一致しない
+ここで注意点として、 `EXPLAIN` を使って実行計画を表示すると、インデックス追加前からスキャンする行数はかなり少なく表示される。一般に、 `EXPLAIN` による予測と、slow query logによる実際の行数は一致しないことがあるらしい。
+
+```sql
+EXPLAIN SELECT posts.`id`, `user_id`, `body`, posts.`created_at`, `mime`, users.account_name FROM `posts` JOIN users ON posts.user_id = users.id WHERE `user_id` = '63' AND users.del_flg = 0 ORDER BY `created_at` DESC LIMIT 20;
+```
+
 
 > {"pass":true,"score":150649,"success":144327,"fail":0,"messages":[]}
 
