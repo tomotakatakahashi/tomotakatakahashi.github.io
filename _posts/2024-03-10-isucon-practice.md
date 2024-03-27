@@ -960,6 +960,21 @@ mysqldのCPU使用率が落ちて、50%ほどに減っている。rubyが4 * 30%
 
 
 
+
+<!--
+
+```sql
+SELECT ranked.post_id, ranked.comment, users.account_name FROM (SELECT *, RANK() OVER (PARTITION BY post_id ORDER BY created_at DESC) AS rank_new FROM comments WHERE post_id IN ('9885','9884','9883','9882','9881','9880','9879','9878','9877','9876','9875','9874','9873','9872','9871','9870','9869','9868','9867','9866') ORDER BY created_at DESC) ranked JOIN users ON ranked.user_id = users.id WHERE rank_new <= 3\G
+```
+
+```sql
+ALTER TABLE comments ADD INDEX post_created_idx (post_id, created_at DESC);
+```
+効果なかった
+
+-->
+
+
 TODO: 続き
 
 
