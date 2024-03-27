@@ -954,7 +954,9 @@ sudo systemctl restart isu-ruby
 
 > {"pass":true,"score":150649,"success":144327,"fail":0,"messages":[]}
 
-## 
+mysqldのCPU使用率が落ちて、50%ほどに減っている。rubyが4 * 30%、nginxが15% + 5%程度を占めている。
+
+## M
 
 
 
