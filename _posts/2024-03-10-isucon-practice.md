@@ -119,7 +119,7 @@ sudo pt-query-digest /var/log/mysql/mysql-slow.log | tee digest_$(date +%Y%m%d%H
 SELECT * FROM `comments` WHERE `post_id` = 9984 ORDER BY `created_at` DESC LIMIT 3
 ```
 
-「Rows examine」の項目を見ると、毎回10万行がチェックされている。インデックスを貼ることで高速化が期待できるため、インデックスを追加する。MySQLのパスワードは `isuconp` で設定されている。
+「Rows examine」の項目を見ると、毎回10万行がチェックされているため、インデックスによる高速化が期待できる。MySQLのパスワードは `isuconp` で設定されている。
 
 ```
 mysql -u isuconp -p isuconp
@@ -157,7 +157,7 @@ sudo rm /var/log/mysql/mysql-slow.log && sudo systemctl restart mysql
 
 `top` で確認したCPU使用率は、mysqldが70%、rubyが4×30%程度で、CPUを200%使い切っている。メモリはまだ1GB程度しか使っておらず、余裕がある。
 
-スロークエリログを見ても、インデックスを貼るだけで直ちに改善できそうなクエリは無い。一番時間を使っているクエリが
+スロークエリログを見ても、インデックスを追加するだけで直ちに改善できそうなクエリは無い。一番時間を使っているクエリが
 
 ```sql
 SELECT `id`, `user_id`, `body`, `created_at`, `mime` FROM `posts` ORDER BY `created_at` DESC
@@ -879,7 +879,7 @@ mysql> PURGE BINARY LOGS BEFORE NOW();
 TODO: 保存しないようにしないとディスクが……
 
 
-## `comments` テーブルにインデックスを貼る
+## `comments` テーブルにインデックスを追加する
 
 `comments` テーブルの `user_id` 列にインデックスを追加することで、 `EXPLAIN` したときの `rows` が10万行程度から100行程度に減少する。
 
@@ -906,8 +906,8 @@ sudo systemctl restart isu-ruby
 
 > {"pass":true,"score":126353,"success":121038,"fail":0,"messages":[]}
 
-## 
-続いて、もう一つのクエリでもインデックスが効くようにする。
+## `posts` テーブル
+続いて、もう一つのクエリでもインデックスが効くようにする。まずはRDBMSにインデックスを追加する。
 
 ```
 mysql -u isoconp -p isuconp
