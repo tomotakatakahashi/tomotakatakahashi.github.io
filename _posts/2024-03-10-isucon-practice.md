@@ -956,8 +956,22 @@ sudo systemctl restart isu-ruby
 
 mysqldのCPU使用率が落ちて、50%ほどに減っている。rubyが4 * 30%、nginxが15% + 5%程度を占めている。
 
-## M
+## リファクタリング
 
+```diff
+110,113c110,113
+<         if all_comments
+<           query = "SELECT ranked.post_id, ranked.comment, users.account_name FROM (SELECT *, RANK() OVER (PARTITION BY post_id ORDER BY created_at DESC) AS rank_new FROM comments) ranked JOIN users ON ranked.user_id = users.id AND post_id IN (?) ORDER BY ranked.created_at DESC"
+<         else
+<           query = "SELECT ranked.post_id, ranked.comment, users.account_name FROM (SELECT *, RANK() OVER (PARTITION BY post_id ORDER BY created_at DESC) AS rank_new FROM comments) ranked JOIN users ON ranked.user_id = users.id WHERE rank_new <= 3 AND post_id IN (?) ORDER BY ranked.created_at DESC"
+---
+>         query = "SELECT ranked.post_id, ranked.comment, users.account_name FROM (SELECT *, RANK() OVER (PARTITION BY post_id ORDER BY created_at DESC) AS rank_new FROM comments WHERE post_id IN (?)) ranked JOIN users ON ranked.user_id = users.id"a
+>
+>         unless all_comments
+>           query += ' WHERE rank_new <= 3'
+```
+
+スコアには影響無し
 
 
 
