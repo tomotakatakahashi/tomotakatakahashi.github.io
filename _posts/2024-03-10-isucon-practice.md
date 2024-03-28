@@ -1000,6 +1000,19 @@ sudo nano /etc/nginx/sites-enabled/isucon.conf
 
 alpの分析でも、静的ファイルそれぞれについて、2XXが1度だけであとは3XXのレスポンスを高速に返せるようになっていることがわかる。
 
+## postのエスケープ結果のキャッシュ
+
+alpを実行すると、上位3つのエンドポイントが `GET /` 、 `GET /posts` 、 `GET /posts/:id` であることがわかる。
+
+stackprofを使うと、 `Sinatra::Templates#erb` に時間がかかっていることがわかる。
+
+```bash
+stackprof private_isu/webapp/ruby/tmp/stackprof-wall-*.dump --method 'block in <class:App>'
+```
+
+さらにstackprofで調査を進めていくと、 `post.erb` での `comment[:comment]` 、 `post[:body]` 、 `post[:user][:account_name]` のエスケープ処理に時間がかかっていることがわかる。これらの文字列をエスケープした結果を保存しておいて再利用するようにしよう。
+
+
 
 
 <!--
