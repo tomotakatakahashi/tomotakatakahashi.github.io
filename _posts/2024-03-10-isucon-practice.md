@@ -1000,6 +1000,10 @@ sudo nano /etc/nginx/sites-enabled/isucon.conf
 
 alpの分析でも、静的ファイルそれぞれについて、2XXが1度だけであとは3XXのレスポンスを高速に返せるようになっていることがわかる。
 
+
+
+<!--
+
 ## commentのエスケープ結果のキャッシュ
 
 alpを実行すると、上位3つのエンドポイントが `GET /` 、 `GET /posts` 、 `GET /posts/:id` であることがわかる。
@@ -1011,6 +1015,63 @@ stackprof private_isu/webapp/ruby/tmp/stackprof-wall-*.dump --method 'block in <
 ```
 
 さらにstackprofで調査を進めていくと、 `post.erb` での `comment[:comment]` 、 `post[:body]` 、 `post[:user][:account_name]` のエスケープ処理に時間がかかっていることがわかる。これらの文字列をエスケープした結果を保存しておいて再利用するようにしよう。
+
+`post[:body]` をエスケープ処理するようにする。
+
+```
+mysql -u isuconp -p isuconp
+mysql> ALTER TABLE posts ADD escaped_body text AFTER body;
+```
+
+```diff
+13c13
+<     <%= escape_html(post[:body]).gsub(/\r?\n/, '<br>') %>
+---
+>     <%= post[:escaped_body] %>
+```
+
+```diff
+121a122,127
+>           if post[:escaped_body].nil?
+>             escaped_body = Rack::Utils.escape_html(post[:body]).gsub(/\r?\n/, '<br>')
+>             post[:escaped_body] = escaped_body
+>             db.xquery("UPDATE posts SET escaped_body = ? WHERE id = ?", escaped_body, post[:id])
+>           end
+>
+236c242
+<       results = db.query("SELECT posts.`id`, `user_id`, `body`, posts.`created_at`, `mime`, users.account_name FROM `posts` FORCE INDEX (created_at_idx) JOIN users ON posts.user_id = users.id WHERE users.del_flg = 0 ORDER BY `created_at` DESC LIMIT #{POSTS_PER_PAGE}")
+---
+>       results = db.query("SELECT posts.`id`, `user_id`, `body`, `escaped_body`, posts.`created_at`, `mime`, users.account_name FROM `posts` FORCE INDEX (created_at_idx) JOIN users ON posts.user_id = users.id WHERE users.del_flg = 0 ORDER BY `created_at` DESC LIMIT #{POSTS_PER_PAGE}")
+251c257
+<       results = db.xquery("SELECT posts.`id`, `user_id`, `body`, posts.`created_at`, `mime`, users.account_name FROM `posts` FORCE INDEX (user_created_idx) JOIN users ON posts.user_id = users.id WHERE `user_id` = ? AND users.del_flg = 0 ORDER BY `created_at` DESC LIMIT #{POSTS_PER_PAGE}",
+---
+>       results = db.xquery("SELECT posts.`id`, `user_id`, `body`, `escaped_body`, posts.`created_at`, `mime`, users.account_name FROM `posts` FORCE INDEX (user_created_idx) JOIN users ON posts.user_id = users.id WHERE `user_id` = ? AND users.del_flg = 0 ORDER BY `created_at` DESC LIMIT #{POSTS_PER_PAGE}",
+280c286
+<       results = db.xquery("SELECT posts.`id`, `user_id`, `body`, posts.`created_at`, `mime`, users.account_name FROM `posts` FORCE INDEX (created_at_idx) JOIN users ON posts.user_id = users.id WHERE posts.created_at <= ? AND users.del_flg = 0 ORDER BY `created_at` DESC LIMIT #{POSTS_PER_PAGE}",
+---
+>       results = db.xquery("SELECT posts.`id`, `user_id`, `body`, `escaped_body`, posts.`created_at`, `mime`, users.account_name FROM `posts` FORCE INDEX (created_at_idx) JOIN users ON posts.user_id = users.id WHERE posts.created_at <= ? AND users.del_flg = 0 ORDER BY `created_at` DESC LIMIT #{POSTS_PER_PAGE}",
+289c295
+<       results = db.xquery("SELECT posts.`id`, `user_id`, `body`, imgdata, posts.`created_at`, `mime`, users.account_name FROM `posts` JOIN users ON posts.user_id = users.id WHERE posts.id = ? AND users.del_flg = 0",
+---
+>       results = db.xquery("SELECT posts.`id`, `user_id`, `body`, `escaped_body`, imgdata, posts.`created_at`, `mime`, users.account_name FROM `posts` JOIN users ON posts.user_id = users.id WHERE posts.id = ? AND users.del_flg = 0",
+334c340
+<         query = 'INSERT INTO `posts` (`user_id`, `mime`, `imgdata`, `body`) VALUES (?,?,?,?)'
+---
+>         query = 'INSERT INTO `posts` (`user_id`, `mime`, `imgdata`, `body`, `escaped_body`) VALUES (?,?,?,?,?)'
+339c345,346
+<           params["body"],
+---
+>           "",
+>           Rack::Utils.escape_html(params["body"]).gsub(/\r?\n/, '<br>'),
+```
+
+> {"pass":true,"score":168636,"success":164205,"fail":3,"messages":["静的ファイルが正しくありません (GET /image/24427.png)","静的ファイルが正しくありません (GET /image/24476.png)","静的ファイルが正しくありません (GET /image/24541.png)"]}
+
+```sql
+ALTER TABLE posts DROP COLUMN escaped_body;
+```
+
+-->
 
 
 <!--
