@@ -1000,7 +1000,7 @@ sudo nano /etc/nginx/sites-enabled/isucon.conf
 
 alpの分析でも、静的ファイルそれぞれについて、2XXが1度だけであとは3XXのレスポンスを高速に返せるようになっていることがわかる。
 
-## postのエスケープ結果のキャッシュ
+## commentのエスケープ結果のキャッシュ
 
 alpを実行すると、上位3つのエンドポイントが `GET /` 、 `GET /posts` 、 `GET /posts/:id` であることがわかる。
 
@@ -1013,7 +1013,57 @@ stackprof private_isu/webapp/ruby/tmp/stackprof-wall-*.dump --method 'block in <
 さらにstackprofで調査を進めていくと、 `post.erb` での `comment[:comment]` 、 `post[:body]` 、 `post[:user][:account_name]` のエスケープ処理に時間がかかっていることがわかる。これらの文字列をエスケープした結果を保存しておいて再利用するようにしよう。
 
 
+<!--
+まずは `comment[:comment]` から始める。
 
+```
+mysql -u isuconp -p isuconp
+mysql> ALTER TABLE comments ADD escaped_comment text AFTER comment;
+```
+
+```diff
+110c110
+<         query = "SELECT ranked.post_id, ranked.comment, users.account_name FROM (SELECT *, RANK() OVER (PARTITION BY post_id ORDER BY created_at DESC) AS rank_new FROM comments WHERE post_id IN (?)) ranked JOIN users ON ranked.user_id = users.id"
+---
+>         query = "SELECT ranked.post_id, ranked.comment, ranked.escaped_comment, ranked.id, users.account_name FROM (SELECT *, RANK() OVER (PARTITION BY post_id ORDER BY created_at DESC) AS rank_new FROM comments WHERE post_id IN (?)) ranked JOIN users ON ranked.user_id = users.id"
+117a118,125
+>         comments.to_a.each do |comment|
+>           if comment[:escaped_comment].nil?
+>             escaped_comment = Rack::Utils.escape_html(comment[:comment])
+>             comment[:escaped_comment] = escaped_comment
+>             db.xquery("UPDATE comments SET escaped_comment = ? WHERE id = ?", escaped_comment, comment[:id])
+>           end
+>         end
+>
+130c138
+<               post_comments.push({ comment: comment[:comment], user: { account_name: comment[:account_name] } })
+---
+>               post_comments.push({ escaped_comment: comment[:escaped_comment], user: { account_name: comment[:account_name] } })
+388c396
+<       query = 'INSERT INTO `comments` (`post_id`, `user_id`, `comment`) VALUES (?,?,?)'
+---
+>       query = 'INSERT INTO `comments` (`post_id`, `user_id`, `comment`, `escaped_comment`) VALUES (?,?,?,?)'
+392c400,401
+<         params['comment']
+---
+>         params['comment'],
+>         Rack::Utils.escape_html(params['comment'])
+```
+
+```diff
+23c23
+<       <span class="isu-comment-text"><%= escape_html(comment[:comment]) %></span>
+---
+>       <span class="isu-comment-text"><%= comment[:comment] %></span>
+```
+
+
+> {"pass":true,"score":148266,"success":144488,"fail":2,"messages":["静的ファイルが正しくありません (GET /image/23692.png)","静的ファイルが正しくありません (GET /image/23740.png)"]}
+
+```
+ALTER TABLE comments DROP COLUMN escaped_comment;
+```
+-->
 
 <!--
 
