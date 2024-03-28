@@ -975,11 +975,11 @@ mysqldのCPU使用率が落ちて、50%ほどに減っている。rubyが4 * 30%
 
 スコアには影響無し。
 
-## 静的ファイルをnginxから返す
+## 静的ファイルをnginxから配信する
 
 topコマンドでのCPU使用率、alp、MySQLのスロークエリログ、stackprofの出力などを見ても、改善できるはっきりとしたボトルネックを見つけづらくなってきている。
 
-alpで集計すると、3位から6位がfavicon、JavaScript、CSSファイルで占められている。しかもこれらのHTTP status codeは全て2XXになっており、キャッシュが効いていないことがわかる。nginxから直接配信して、キャッシュも効かせよう。
+alpで集計すると、3位から6位がfavicon、JavaScript、CSSファイルで占められている。これらのファイルはRubyを経由して返されており、しかもこれらのHTTP status codeは全て2XXになっていて、キャッシュが効いていないことがわかる。nginxから直接配信して、キャッシュも効かせよう。
 
 ```bash
 sudo nano /etc/nginx/sites-enabled/isucon.conf
@@ -987,14 +987,18 @@ sudo nano /etc/nginx/sites-enabled/isucon.conf
 
 ```diff
 6a7,11
->   location ~ ^/(favicon\.ico|css/js/img/) {
+>   location ~ ^/(favicon\.ico|css/|js/|img/) {
 >     root /home/isucon/private_isu/webapp/public/;
 >     expires 1d;
 >   }
 >
 ```
 
-サービス再起動、ベンチマーク
+サービス再起動、ベンチマークをすると、以下のように得点が伸びる。
+
+> {"pass":true,"score":195120,"success":189827,"fail":2,"messages":["静的ファイルが正しくありません (GET /image/23075.png)","静的ファイルが正しくありません (GET /image/23106.png)"]}
+
+alpの分析でも、静的ファイルそれぞれについて、2XXが1度だけであとは3XXのレスポンスを高速に返せるようになっていることがわかる。
 
 
 
