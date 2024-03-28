@@ -409,6 +409,7 @@ mysql > EXPLAIN SELECT posts.`id`, `user_id`, `body`, posts.`created_at`, `mime`
 各種サービスを再起動し、ベンチマークを再実行する。ところでいままで画像ファイルのキャッシュを消していなかったので、ベンチマーク前に削除するようにしたほうがいいのではないだろうか。といいつつ、消しても消さなくてもベンチマーク結果がほぼ同じだったのでそのままにする。
 
 TODO: 消さないとディスクいっぱいになりやすいかも
+TODO: 消さないとベンチマーク安定しないかも
 
 ```bash
 sudo rm /var/log/nginx/access.log && sudo systemctl restart nginx
@@ -999,6 +1000,51 @@ sudo nano /etc/nginx/sites-enabled/isucon.conf
 > {"pass":true,"score":195120,"success":189827,"fail":2,"messages":["静的ファイルが正しくありません (GET /image/23075.png)","静的ファイルが正しくありません (GET /image/23106.png)"]}
 
 alpの分析でも、静的ファイルそれぞれについて、2XXが1度だけであとは3XXのレスポンスを高速に返せるようになっていることがわかる。
+
+## `INSERT posts` で画像を保存しないようにする
+
+MySQLのスロークエリログを見ると `INSERT posts` のクエリが2位になっており、大きな画像ファイルをMySQLに保存していて遅くなっていることが推察される。ディスクに直接保存するようにしてみよう。
+
+
+```diff
+315c315
+<         mime = ''
+---
+>         mime, ext = '', ''
+318c318
+<           mime = "image/jpeg"
+---
+>           mime, ext = "image/jpeg", "jpg"
+320c320
+<           mime = "image/png"
+---
+>           mime, ext = "image/png", "png"
+322c322
+<           mime = "image/gif"
+---
+>           mime, ext = "image/gif", "gif"
+328c328
+<         if params['file'][:tempfile].read.length > UPLOAD_LIMIT
+---
+>         if params['file'][:tempfile].size > UPLOAD_LIMIT
+333d332
+<         params['file'][:tempfile].rewind
+338c337
+<           params["file"][:tempfile].read,
+---
+>           '',
+341a341,344
+>
+>         imgfile = IMAGE_DIR + "/#{pid}.#{ext}"
+>         FileUtils.mv(params["file"][:tempfile], imgfile)
+>         FileUtils.chmod(0644, imgfile)
+```
+
+> {"pass":true,"score":196959,"success":191136,"fail":0,"messages":[]}
+
+
+
+
 
 
 
