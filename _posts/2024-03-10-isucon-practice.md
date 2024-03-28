@@ -32,6 +32,8 @@ ssh isucon@your_server_instance_public_ip
 
 サーバーインスタンスで、ベンチマーカーを実行しやすいように `cd` しておく。
 
+TODO: cdやめる。ログイン時めんどい
+
 ```bash
 cd private_isu.git/benchmarker/
 ```
