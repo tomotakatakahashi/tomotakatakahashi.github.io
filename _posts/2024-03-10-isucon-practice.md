@@ -48,7 +48,7 @@ top
 
 > {"pass":true,"score":636,"success":576,"fail":2,"messages":["リクエストがタイムアウトしました (POST /login)","リクエストがタイムアウトしました (POST /register)"]}
 
-## worker processの引き上げ
+## worker processの引き上げ（600点）
 
 CPU、メモリともに余裕があるので、リソースが全て活用できていないことがわかる。リソースを活用するため、Unicornのworker processを増加させる。
 
@@ -67,19 +67,11 @@ Unicornの設定ファイル `private_isu/webapp/ruby/unicorn_config.rb` を開�
 sudo systemctl restart isu-ruby
 ```
 
-10に設定したのは、CPUのコア数が2つ（ref. `less /proc/cpuinfo` ）であり、書籍に
+再度ベンチマークを実行する。すると、mysqldがCPUをほぼ200%全て使い切るようになる。得点には大きな変化はない。（なぜ得点が増えないのかは不明）
 
-> 筆者の経験では、プロセス外部のミドルウェアとの通信が多い典型的なWebアプリケーションの場合、CPUコア数の5倍程度を設定するのが適切な場合が多くありました。
+> {"pass":true,"score":578,"success":565,"fail":4,"messages":["リクエストがタイムアウトしました (POST /login)","リクエストがタイムアウトしました (POST /register)"]}
 
-と書いてあったため。
-
-再度ベンチマーカーを実行すると、CPU使用率がmysqldが200%、メモリ使用量が1GB程度になる。また、リクエスト失敗が増えて得点が0に下がってしまう。（ところでこのような失敗は書籍には載っていない。自分で手を動かすのは重要だと改めて思う。）
-
-> {"pass":true,"score":0,"success":174,"fail":57,"messages":["リクエストがタイムアウトしました (GET /)","リクエストがタイムアウトしました (GET /@bessie)","リクエストがタイムアウトしました (GET /@irma)","リクエストがタイムアウトしました (GET /@janet)","リクエストがタイムアウトしました (GET /@marquita)","リクエストがタイムアウトしました (GET /@shelly)","リクエストがタイムアウトしました (GET /image/6910.jpg)","リクエストがタイムアウトしました (GET /posts/9399)","リクエストがタイムアウトしました (POST /login)","リクエストがタイムアウトしました (POST /register)"]}
-
-得点が0なのは困るので、worker_processesを2に変更する。依然としてmysqldがCPUを200%使い切っているが、正の得点が得られる。
-
-> {"pass":true,"score":584,"success":583,"fail":4,"messages":["リクエストがタイムアウトしました (POST /login)","リクエストがタイムアウトしました (POST /register)"]}
+なお、worker processを10などの大きすぎる値に変更すると、リクエスト失敗が増えて得点が0に下がってしまうので注意。
 
 ## MySQLへのindexの追加
 
