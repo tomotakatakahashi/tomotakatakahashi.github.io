@@ -75,19 +75,20 @@ sudo systemctl restart isu-ruby
 
 ## MySQLへのindexの追加
 
-ボトルネックがMySQLのCPU使用量に移動したため、MySQLのスロークエリログを取得する。
+MySQLのCPU使用量が非常に大きいので、原因を調べるためにMySQLのスロークエリログを取得する。
 
 
-`/etc/mysql/mysql.conf.d/mysqld.cnf` の `[mysqld]` 以下を追記する。
-
-```
-slow_query_log = 1
-slow_query_log_file = /var/log/mysql/mysql-slow.log
-long_query_time = 0
-```
+`/etc/mysql/mysql.conf.d/mysqld.cnf` の `[mysqld]` 以下に、スロークエリログを記録する設定を追加する。設定ファイルの編集に管理者権限が必要なので、サーバー上の `nano` で編集することにする。
 
 ```bash
 sudo nano /etc/mysql/mysql.conf.d/mysqld.cnf
+```
+
+```diff
+14a15,17
+> slow_query_log = 1
+> slow_query_log_file = /var/log/mysql/mysql-slow.log
+> long_query_time = 0
 ```
 
 その後、MySQLを再起動する。
@@ -96,15 +97,15 @@ sudo nano /etc/mysql/mysql.conf.d/mysqld.cnf
 sudo systemctl restart mysql
 ```
 
-スロークエリログを生成するため、ベンチマークを実行する。スロークエリログを有効化したためか、ベンチマークの得点が落ちる。
+スロークエリログを生成するため、ベンチマークを実行する。得点はほとんど変わらない。
 
-> {"pass":true,"score":586,"success":587,"fail":5,"messages":["リクエストがタイムアウトしました (GET /favicon.ico)","リクエストがタイムアウトしました (GET /logout)","リクエストがタイムアウトしました (POST /login)","リクエストがタイムアウトしました (POST /register)"]}
+> {"pass":true,"score":682,"success":654,"fail":3,"messages":["リクエストがタイムアウトしました (POST /login)","リクエストがタイムアウトしました (POST /register)"]}
 
 `pt-query-digest` を使い、スロークエリログを集計する。
 
 ```bash
 sudo apt update && sudo apt install percona-toolkit
-sudo pt-query-digest /var/log/mysql/mysql-slow.log | tee digest_$(date +%Y%m%d%H%M).txt
+sudo pt-query-digest /var/log/mysql/mysql-slow.log > digest_$(date +%Y%m%d%H%M).txt
 ```
 
 70%の時間を、次のクエリが消費していることがわかる。
