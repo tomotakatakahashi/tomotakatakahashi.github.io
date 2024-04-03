@@ -223,10 +223,10 @@ sudo ./alp json --file /var/log/nginx/access.log --sort sum -r -m "^/image/\d+\.
 
 ## 画像をnginxから配信
 
-ソースコードを読むと、画像ファイルがRDBに格納され、Rubyを経由して返されていることがわかる。実際、スロークエリログで2番目に時間がかかっているクエリ 
+ソースコードを読むと、画像ファイルがRDBに格納され、Rubyを経由して返されていることがわかる。実際、スロークエリログで4番目に時間がかかっているクエリ 
 
 ```sql
-SELECT * FROM `posts` WHERE `id` = 3906`
+SELECT * FROM `posts` WHERE `id` = 10149\G
 ```
 
 もこの操作で使われている。
