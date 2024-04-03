@@ -48,7 +48,7 @@ top
 
 > {"pass":true,"score":636,"success":576,"fail":2,"messages":["リクエストがタイムアウトしました (POST /login)","リクエストがタイムアウトしました (POST /register)"]}
 
-## worker processの引き上げ（600点）
+## worker processの2への引き上げ（600点）
 
 CPU、メモリともに余裕があるので、リソースが全て活用できていないことがわかる。リソースを活用するため、Unicornのworker processを増加させる。
 
@@ -73,10 +73,9 @@ sudo systemctl restart isu-ruby
 
 なお、worker processを10などの大きすぎる値に変更すると、リクエスト失敗が増えて得点が0に下がってしまうので注意。
 
-## MySQLへのindexの追加
+## MySQLのスロークエリログの取得・集計
 
 MySQLのCPU使用量が非常に大きいので、原因を調べるためにMySQLのスロークエリログを取得する。
-
 
 `/etc/mysql/mysql.conf.d/mysqld.cnf` の `[mysqld]` 以下に、スロークエリログを記録する設定を追加する。設定ファイルの編集に管理者権限が必要なので、サーバー上の `nano` で編集することにする。
 
@@ -106,15 +105,18 @@ sudo systemctl restart mysql
 ```bash
 sudo apt update && sudo apt install percona-toolkit
 sudo pt-query-digest /var/log/mysql/mysql-slow.log > digest_$(date +%Y%m%d%H%M).txt
+less $(ls -r digest_*.txt| head -n 1)
 ```
 
 70%の時間を、次のクエリが消費していることがわかる。
 
 ```sql
-SELECT * FROM `comments` WHERE `post_id` = 9984 ORDER BY `created_at` DESC LIMIT 3
+SELECT * FROM `comments` WHERE `post_id` = 9983 ORDER BY `created_at` DESC LIMIT 3\G
 ```
 
-「Rows examine」の項目を見ると、毎回10万行がチェックされているため、インデックスによる高速化が期待できる。MySQLのパスワードは `isuconp` で設定されている。
+## `comments` テーブルの `post_id` 列にindexの追加（12000点）
+
+「Rows examine」の項目を見ると、毎回10万行がチェックされているため、インデックスの追加による高速化が期待できる。MySQLのパスワードは `isuconp` で設定されている。
 
 ```
 mysql -u isuconp -p isuconp
@@ -123,77 +125,85 @@ mysql> ALTER TABLE `comments` ADD INDEX `post_id_idx` (`post_id`);
 mysql> exit
 ```
 
-再度スロークエリログを取得しなおしたいが、前回のベンチマーク時のログと分離するため、ログを削除してMySQLを再起動する（もっといいやり方がある気はする）。
+再度スロークエリログを取得しなおしたいが、前回のベンチマーク時のログと分離するため、ログを削除してMySQLを再起動する。
 
 ```bash
 sudo rm /var/log/mysql/mysql-slow.log && sudo systemctl restart mysql
 ```
 
-ベンチマークを再度実行する。CPU使用率がmysqld 60%、ruby 40% + 40%くらいに変化する。得点も大幅に上昇する。
+ベンチマークを再度実行する。CPU使用率がmysqld 70%、ruby 50% + 50%くらいに変化する。得点も大幅に上昇する。
 
-> {"pass":true,"score":10208,"success":8851,"fail":0,"messages":[]}
+> {"pass":true,"score":11579,"success":10058,"fail":0,"messages":[]}
 
-## worker processの引き上げとボトルネック探し
+## worker processの4への引き上げ（14000点）
 
-再びCPUの使用率に余裕が出てきているため、Unicornのworker processを4に上げる。
+再びCPUの使用率に余裕が出てきているため、Unicornのworker processを4に上げる。 `private_isu/webapp/ruby/unicorn_config.rb` を編集する。
+
+```diff
+1c1
+< worker_processes 2
+---
+> worker_processes 4
+```
+
+MySQLのスロークエリログを削除し、各種サービスを再起動する。
 
 ```bash
-nano private_isu/webapp/ruby/unicorn_config.rb
 sudo systemctl restart isu-ruby
-```
-
-スロークエリログを削除した上で、再度ベンチマークを実行する。
-
-```bash
 sudo rm /var/log/mysql/mysql-slow.log && sudo systemctl restart mysql
 ```
 
-> {"pass":true,"score":13300,"success":12064,"fail":0,"messages":[]}
+再度ベンチマークを実行する。得点が上がる。
+
+> {"pass":true,"score":14433,"success":13132,"fail":0,"messages":[]}
 
 `top` で確認したCPU使用率は、mysqldが70%、rubyが4×30%程度で、CPUを200%使い切っている。メモリはまだ1GB程度しか使っておらず、余裕がある。
 
-スロークエリログを見ても、インデックスを追加するだけで直ちに改善できそうなクエリは無い。一番時間を使っているクエリが
+スロークエリログを見ても、インデックスを追加するだけで直ちに改善できそうなクエリは無い。50%近くを占めていて、一番時間を使っているクエリが
 
 ```sql
-SELECT `id`, `user_id`, `body`, `created_at`, `mime` FROM `posts` ORDER BY `created_at` DESC
+SELECT `id`, `user_id`, `body`, `created_at`, `mime` FROM `posts` ORDER BY `created_at` DESC\G
 ```
 
 というクエリだが、 `posts` テーブルの行を全て取得しており、必要な処理なのか疑問が残る。使われているのは `app.rb` の227行目で、エンドポイントは `GET /` であり、周辺に `make_posts` というN+1問題を抱えていそうなあやしい関数が見つかる。この辺りを直したい気持ちになるが、その前にまずはここの影響の大きさを計測する。
 
 ## `alp` によるアクセスログの集計
 
-まずはnginxがJSON形式でアクセスログを記録するように設定を変更する。 `/etc/nginx/nginx.conf` を編集する。
-
-TODO: 説明丁寧に
+まずはnginxがJSON形式でアクセスログを記録するように設定を変更する。 `/etc/nginx/nginx.conf` を編集する。ログフォーマットは[alpのREADMEにあるもの](https://github.com/tkuchiki/alp/blob/d91a23dc2d71521c5a9e166faf92f68d082fb85f/README.md#nginx-1)を使っている。
 
 ```bash
 sudo nano /etc/nginx/nginx.conf
 ```
 
-```
-        access_log /var/log/nginx/access.log;
+```diff
+39c39,56
+<       access_log /var/log/nginx/access.log;
+---
+>       log_format json escape=json
+>               '{"time":"$time_local",'
+>               '"host":"$remote_addr",'
+>               '"forwardedfor":"$http_x_forwarded_for",'
+>               '"req":"$request",'
+>               '"status":"$status",'
+>               '"method":"$request_method",'
+>               '"uri":"$request_uri",'
+>               '"body_bytes":$body_bytes_sent,'
+>               '"referer":"$http_referer",'
+>               '"ua":"$http_user_agent",'
+>               '"request_time":$request_time,'
+>               '"cache":"$upstream_http_x_cache",'
+>               '"runtime":"$upstream_http_x_runtime",'
+>               '"response_time":"$upstream_response_time",'
+>               '"vhost":"$host"}';
+>
+>       access_log /var/log/nginx/access.log json;
 ```
 
-```
-  log_format json escape=json '{"time": "$time_iso8601",'
-    '"host": "$remote_addr",'
-    '"status": "$status",'
-    '"method": "$request_method",'
-    '"uri": "$request_uri",'
-    '"body_bytes": "$body_bytes_sent",'
-    '"request_time": "$request_time",'
-    '"response_time": "$upstream_response_time",'
-    '"ua": "$http_user_agent",'
-    '"referrer": "$http_referer"}';
-
-        access_log /var/log/nginx/access.log json;
-```
-
-
-ログファイルを削除し、新しいログ形式を適用するためにnginxを再起動する。
+nginxのアクセスログを削除し、新しいログ形式を適用するためにnginxを再起動する。また、MySQLについても同様にする。
 
 ```bash
 sudo rm /var/log/nginx/access.log && sudo systemctl restart nginx
+sudo rm /var/log/mysql/mysql-slow.log && sudo systemctl restart mysql
 ```
 
 alpをダウンロードし、展開する。
