@@ -221,117 +221,47 @@ sudo ./alp json --file /var/log/nginx/access.log --sort sum -r -m "^/image/\d+\.
 
 エンドポイント `^/image/\d+\.(jpg|png|gif)$` が一番時間がかかっていることがわかる。
 
-## 画像をnginxから配信
+## 画像をnginxでキャッシュ
 
-ソースコードを読むと、画像ファイルがRDBに格納され、Rubyを経由して返されていることがわかる。実際、スロークエリログで4番目に時間がかかっているクエリ 
+ソースコードを読むと、画像ファイルがRDBに格納され、Rubyを経由して返されていることがわかる。実際、スロークエリログで3番目に時間がかかっているクエリ
 
 ```sql
-SELECT * FROM `posts` WHERE `id` = 10149\G
+SELECT * FROM `posts` WHERE `id` = 10333\G
 ```
 
 もこの操作で使われている。
 
-静的ファイルはなるべくアプリケーション部分を介さずにnginxから直接返すようにする。nginxの設定を変更し、 `/image/` 以下のリクエストは `/home/isucon/private_isu/webapp/public/image/` 以下からまずはファイルを探し、もしファイルが見つからなかったらアプリケーションサーバにリバースプロキシするように設定を変更する。
-
-```bash
-sudo nano /etc/nginx/sites-enabled/isucon.conf
-```
-
-```
-server {
-  listen 80;
-
-  client_max_body_size 10m;
-  root /home/isucon/private_isu/webapp/public/;
-
-  location /image/ {
-    root /home/isucon/private_isu/webapp/public/;
-    expires 1d;
-    try_files $uri @app;
-  }
-
-  location @app {
-    internal;
-    proxy_pass http://localhost:8080;
-  }
-
-  location / {
-    proxy_set_header Host $host;
-    proxy_pass http://localhost:8080;
-  }
-}
-```
-
-画像に関してアプリとRDBを全く使わないようにすることも可能ではあるが、実装が大変なので、ここではリクエストの度にRDBから `/home/isucon/private_isu/webapp/public/image/` 以下に画像ファイルをコピーすることで、ディスクをキャッシュのように使うことにする。 `app.rb` を以下のように変更する。
+ソースコードを読むと投稿画像は追加されることはあるが更新・削除されることはないことがわかる。そこで、 `/image/` 以下のリクエストは、nginxでキャッシュすることにする。 `/etc/nginx/sites-avaliable/isucon.conf` にキャッシュの設定を追加する。（nginxに詳しくないので、適当に書いている）
 
 ```diff
-@@ -3,6 +3,7 @@ require 'mysql2'
- require 'rack-flash'
- require 'shellwords'
- require 'rack/session/dalli'
-+require 'fileutils'
-
- module Isuconp
-   class App < Sinatra::Base
-@@ -14,6 +15,8 @@ module Isuconp
-
-     POSTS_PER_PAGE = 20
-
-+    IMAGE_DIR = File.expand_path('../../public/image', __FILE__)
-+
-     helpers do
-       def config
-         @config ||= {
-@@ -349,6 +352,11 @@ module Isuconp
-           (params[:ext] == "png" && post[:mime] == "image/png") ||
-           (params[:ext] == "gif" && post[:mime] == "image/gif")
-         headers['Content-Type'] = post[:mime]
-+
-+        imgfile = IMAGE_DIR + "/#{post[:id]}.#{params[:ext]}"
-+        f = File.open(imgfile, "w")
-+        f.write(post[:imgdata])
-+        f.close()
-         return post[:imgdata]
-       end
+0a1,2
+> proxy_cache_path /home/isucon/private_isu/webapp/image_cache levels=1:2 keys_zone=IMAGE:10m inactive=24h max_size=1g;
+>
+5a8,14
+>
+>   location /image/ {
+>     proxy_cache IMAGE;
+>     proxy_cache_valid 200 1d;
+>     proxy_set_header Host $host;
+>     proxy_pass http://localhost:8080;
+>   }
 ```
 
-画像を格納するディレクトリを作っておく。
+各種サービスやログをリフレッシュして、ベンチマークをとる。
 
 ```bash
-mkdir private_isu/webapp/public/image
-```
-
-設定が済んだら、再起動する。
-
-```bash
+sudo rm -r /home/isucon/private_isu/webapp/image_cache && mkdir /home/isucon/private_isu/webapp/image_cache
 sudo rm /var/log/nginx/access.log && sudo systemctl restart nginx
 sudo rm /var/log/mysql/mysql-slow.log && sudo systemctl restart mysql
-sudo systemctl restart isu-ruby
 ```
 
-再度ベンチマークを実行すると、得点が伸びていることがわかる。
+スコアが伸びる。
 
-> {"pass":true,"score":24378,"success":23137,"fail":0,"messages":[]}
+> {"pass":true,"score":23321,"success":22119,"fail":0,"messages":[]}
 
-alpでアクセスログを集計すると、 `image/` にかかる時間の割合が減り、 `GET /` が一番時間がかかるようになっている。
+`alp` で集計すると、 `/image/` 以下へのリクエストにかかる時間も減り、 `GET /` のリクエストの時間が1位になっていることがわかる。
 
-```bash
-sudo ./alp json --file /var/log/nginx/access.log --sort sum -r -m "^/image/\d+\.(jpg|png|gif)$,^/posts/\d+$,^/@\w+$"
-```
-
-スロークエリログも集計しておこう。
-
-```bash
-sudo pt-query-digest /var/log/mysql/mysql-slow.log | tee digest_$(date +%Y%m%d%H%M).txt
-```
-
-画像取得のためにも使われていた、以前2番目に時間がかかっていたクエリ
-
-```sql
-SELECT * FROM `posts` WHERE `id` = 3906;
-```
-
-も、はるか下方10番目まで下がっている。
+スロークエリログも集計する。画像取得のためにも使われていたクエリも、上位から消えている。
 
 ## `GET /` の改善
 
@@ -1309,6 +1239,97 @@ sudo systemctl restart isu-ruby
 
 
 <!-- ssh, tcp 80はつながるが、pingはtimeoutするので注意 -->
+
+<!--
+
+
+
+
+静的ファイルはなるべくアプリケーション部分を介さずにnginxから直接返すようにする。nginxの設定を変更し、 `/image/` 以下のリクエストは `/home/isucon/private_isu/webapp/public/image/` 以下からまずはファイルを探し、もしファイルが見つからなかったらアプリケーションサーバにリバースプロキシするように設定を変更する。
+
+```bash
+sudo nano /etc/nginx/sites-enabled/isucon.conf
+```
+
+```
+server {
+  listen 80;
+
+  client_max_body_size 10m;
+  root /home/isucon/private_isu/webapp/public/;
+
+  location /image/ {
+    root /home/isucon/private_isu/webapp/public/;
+    expires 1d;
+    try_files $uri @app;
+  }
+
+  location @app {
+    internal;
+    proxy_pass http://localhost:8080;
+  }
+
+  location / {
+    proxy_set_header Host $host;
+    proxy_pass http://localhost:8080;
+  }
+}
+```
+
+画像に関してアプリとRDBを全く使わないようにすることも可能ではあるが、実装が大変なので、ここではリクエストの度にRDBから `/home/isucon/private_isu/webapp/public/image/` 以下に画像ファイルをコピーすることで、ディスクをキャッシュのように使うことにする。 `app.rb` を以下のように変更する。
+
+```diff
+@@ -3,6 +3,7 @@ require 'mysql2'
+ require 'rack-flash'
+ require 'shellwords'
+ require 'rack/session/dalli'
++require 'fileutils'
+
+ module Isuconp
+   class App < Sinatra::Base
+@@ -14,6 +15,8 @@ module Isuconp
+
+     POSTS_PER_PAGE = 20
+
++    IMAGE_DIR = File.expand_path('../../public/image', __FILE__)
++
+     helpers do
+       def config
+         @config ||= {
+@@ -349,6 +352,11 @@ module Isuconp
+           (params[:ext] == "png" && post[:mime] == "image/png") ||
+           (params[:ext] == "gif" && post[:mime] == "image/gif")
+         headers['Content-Type'] = post[:mime]
++
++        imgfile = IMAGE_DIR + "/#{post[:id]}.#{params[:ext]}"
++        f = File.open(imgfile, "w")
++        f.write(post[:imgdata])
++        f.close()
+         return post[:imgdata]
+       end
+```
+
+画像を格納するディレクトリを作っておく。
+
+```bash
+mkdir private_isu/webapp/public/image
+```
+
+設定が済んだら、再起動する。
+
+```bash
+sudo rm /var/log/nginx/access.log && sudo systemctl restart nginx
+sudo rm /var/log/mysql/mysql-slow.log && sudo systemctl restart mysql
+sudo systemctl restart isu-ruby
+```
+
+再度ベンチマークを実行すると、得点が伸びていることがわかる。
+
+> {"pass":true,"score":24378,"success":23137,"fail":0,"messages":[]}
+
+alpでアクセスログを集計すると、 `image/` にかかる時間の割合が減り、 `GET /` が一番時間がかかるようになっている。
+
+-->
 
 
 ## CloudFormationスタックを削除する
