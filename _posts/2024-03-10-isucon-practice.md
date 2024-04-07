@@ -250,7 +250,7 @@ SELECT * FROM `posts` WHERE `id` = 10333\G
 各種サービスやログをリフレッシュして、ベンチマークをとる。
 
 ```bash
-sudo rm -r /home/isucon/private_isu/webapp/image_cache && mkdir /home/isucon/private_isu/webapp/image_cache
+sudo rm -r private_isu/webapp/image_cache && mkdir private_isu/webapp/image_cache
 sudo rm /var/log/nginx/access.log && sudo systemctl restart nginx
 sudo rm /var/log/mysql/mysql-slow.log && sudo systemctl restart mysql
 ```
@@ -263,9 +263,54 @@ sudo rm /var/log/mysql/mysql-slow.log && sudo systemctl restart mysql
 
 スロークエリログも集計する。画像取得のためにも使われていたクエリも、上位から消えている。
 
+## stackprof の導入（17000点）
 
+1番時間がかかっている `GET /` の速度を改善したい。前述の通りN+1問題を抱えているので、そのあたりを改善すればいいだろうとあたりはつくが、念のためプロファイラ [stackprof](https://github.com/tmm1/stackprof) を導入して調査しよう。
 
+`Gemfile` に `gem 'stackprof'` を追加する。
 
+```diff
+12a13
+> gem 'stackprof'
+```
+
+`app.rb` に以下の行を追加する。なお、intervalのデフォルト値は1000（μs）になっているが、それだとボトルネックでない部分が検出されてしまうようだ。
+
+```diff
+5a6
+> require 'stackprof'
+10a12,15
+>     use StackProf::Middleware, enabled: true,
+>                                mode: :wall,
+>                                interval: 100,
+>                                save_every: 5
+```
+
+`bundle` コマンドでgemをインストールする。
+
+```bash
+bundle install --gemfile private_isu/webapp/ruby/Gemfile
+```
+
+stackprofが出力するファイルを削除し、各種サービスを再起動する。
+
+```bash
+rm private_isu/webapp/ruby/tmp/stackprof-*.dump
+sudo rm -r private_isu/webapp/image_cache && mkdir private_isu/webapp/image_cache
+sudo rm /var/log/nginx/access.log && sudo systemctl restart nginx
+sudo rm /var/log/mysql/mysql-slow.log && sudo systemctl restart mysql
+sudo systemctl restart isu-ruby
+```
+
+ベンチマークを実行すると、プロファイラを入れた影響で得点が下がる。
+
+> {"pass":true,"score":16680,"success":15798,"fail":1,"messages":["response code should be 200, got 500 (GET /@jeannie)"]}
+
+`stackprof` コマンドを使って掘り下げていくと、やはり `make_posts` に時間がかかっていることがわかる。
+
+```bash
+stackprof private_isu/webapp/ruby/tmp/stackprof-wall-*.dump --method 'block in <class:App>'
+```
 
 ## `GET /` の改善
 
@@ -708,7 +753,6 @@ gem 'stackprof'
 
 `app.rb` に以下の行を追加する。なお、intervalのデフォルト値は1000（μs）になっているが、それだとボトルネックでない部分が検出されてしまうようだ。
 
-TODO: wall -> cpu
 
 ```diff
 6a7
