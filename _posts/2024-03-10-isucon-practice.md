@@ -221,7 +221,7 @@ sudo ./alp json --file /var/log/nginx/access.log --sort sum -r -m "^/image/\d+\.
 
 エンドポイント `^/image/\d+\.(jpg|png|gif)$` が一番時間がかかっていることがわかる。
 
-## 画像をnginxでキャッシュ
+## 画像をnginxでキャッシュ（23000点）
 
 ソースコードを読むと、画像ファイルがRDBに格納され、Rubyを経由して返されていることがわかる。実際、スロークエリログで3番目に時間がかかっているクエリ
 
@@ -262,6 +262,10 @@ sudo rm /var/log/mysql/mysql-slow.log && sudo systemctl restart mysql
 `alp` で集計すると、 `/image/` 以下へのリクエストにかかる時間も減り、 `GET /` のリクエストの時間が1位になっていることがわかる。
 
 スロークエリログも集計する。画像取得のためにも使われていたクエリも、上位から消えている。
+
+
+
+
 
 ## `GET /` の改善
 
