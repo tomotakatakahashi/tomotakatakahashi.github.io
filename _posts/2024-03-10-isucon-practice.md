@@ -1308,6 +1308,8 @@ sudo systemctl restart isu-ruby
 -->
 
 
+<!-- ssh, tcp 80はつながるが、pingはtimeoutするので注意 -->
+
 
 ## CloudFormationスタックを削除する
 
