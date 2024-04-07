@@ -309,64 +309,53 @@ sudo systemctl restart isu-ruby
 `stackprof` コマンドを使って掘り下げていくと、やはり `make_posts` に時間がかかっていることがわかる。
 
 ```bash
-stackprof private_isu/webapp/ruby/tmp/stackprof-wall-*.dump --method 'block in <class:App>'
+stackprof private_isu/webapp/ruby/tmp/stackprof-wall-*.dump --method 'block in <class:App>' --sort-total
 ```
 
-## `GET /` の改善
+## 20件を一度に取得（25000点）
 
-`GET /` については、 `app.rb` を見るとわかるように、 `make_posts` 関数がN+1問題を抱えている。スロークエリログを見ても、1番目と3番目のクエリ
+`GET /` を高速化するために `make_posts` のN+1問題を解決したい。 `make_posts` には `posts` テーブルから全件取得した投稿が渡され、DBにクエリを投げながら、その中から20件の投稿を抽出する動作になっている。まずはこれを1回のクエリで20件のみの投稿を抽出するように変更しよう。
+
+実際、スロークエリログを見ても、1番目と4番目のクエリ
 
 ```sql
-SELECT `id`, `user_id`, `body`, `created_at`, `mime` FROM `posts` ORDER BY `created_at` DESC;
-SELECT * FROM `users` WHERE `id` = 876;
+SELECT `id`, `user_id`, `body`, `created_at`, `mime` FROM `posts` ORDER BY `created_at` DESC\G
+SELECT * FROM `users` WHERE `id` = 57\G
 ```
 
-がどちらもこのエンドポイントで使われているクエリである。
+がどちらも `GET /` で、20件のポストを抽出するために使われているクエリだ。
 
-N+1問題を解消したいところではあるが、その前にまずは、 `SELECT` で`posts` を全件取得してからあとで20件に絞り込んでいるところを改善し、MySQLから20件のpostのみを返すように変更しよう。
-
-以下のような変更を加えて、MySQLから20件以下のみを返すようにする。（繰り返しが多くコードが汚くなってしまっている。viewか何かを使ってきれいにしたいが、今はパフォーマンスを上げることが目的なので妥協する。）
+以下のような変更を加えて、MySQLから20件以下のみを返すようにする。繰り返しが多くコードが汚くなってしまっている。viewか何かを使ってきれいにしたいが、今はパフォーマンスを上げることが目的なので妥協する。また、2番目のクエリは、1、3、4番目のクエリと違って、まず `user_id` で絞り込める点で性格の異なるクエリであることに注意。
 
 ```diff
-128,130c128
-<
+131,132c131
 <           posts.push(post) if post[:user][:del_flg] == 0
 <           break if posts.length >= POSTS_PER_PAGE
 ---
 >           posts.push(post)
-230c228
+232c231
 <       results = db.query('SELECT `id`, `user_id`, `body`, `created_at`, `mime` FROM `posts` ORDER BY `created_at` DESC')
 ---
 >       results = db.query("SELECT posts.`id`, `user_id`, `body`, posts.`created_at`, `mime` FROM `posts` JOIN users ON posts.user_id = users.id WHERE users.del_flg = 0 ORDER BY `created_at` DESC LIMIT #{POSTS_PER_PAGE}")
-245c243
+247c246
 <       results = db.prepare('SELECT `id`, `user_id`, `body`, `mime`, `created_at` FROM `posts` WHERE `user_id` = ? ORDER BY `created_at` DESC').execute(
 ---
->       results = db.prepare("SELECT posts.`id`, `user_id`, `body`, posts.`created_at`, `mime` FROM `posts` JOIN users ON posts.user_id = users.id WHERE `user_id` = ? AND users.del_flg = 0 ORDER BY `created_at` DESC LIMIT #{POSTS_PER_PAGE}").execute(
-274c272
+>       results = db.prepare("SELECT posts.`id`, `user_id`, `body`, `mime`, posts.`created_at` FROM `posts` JOIN users ON posts.user_id = users.id WHERE `user_id` = ? AND users.del_flg = 0 ORDER BY `created_at` DESC LIMIT #{POSTS_PER_PAGE}").execute(
+276c275
 <       results = db.prepare('SELECT `id`, `user_id`, `body`, `mime`, `created_at` FROM `posts` WHERE `created_at` <= ? ORDER BY `created_at` DESC').execute(
 ---
->       results = db.prepare("SELECT posts.`id`, `user_id`, `body`, posts.`created_at`, `mime` FROM `posts` JOIN users ON posts.user_id = users.id WHERE posts.created_at <= ? AND users.del_flg = 0 ORDER BY `created_at` DESC LIMIT #{POSTS_PER_PAGE}").execute(
-283c281
+>       results = db.prepare("SELECT posts.`id`, `user_id`, `body`, `mime`, posts.`created_at` FROM `posts` JOIN users ON posts.user_id = users.id WHERE `created_at` <= ? AND users.del_flg = 0 ORDER BY `created_at` DESC LIMIT #{POSTS_PER_PAGE}").execute(
+285c284
 <       results = db.prepare('SELECT * FROM `posts` WHERE `id` = ?').execute(
 ---
->       results = db.prepare("SELECT posts.`id`, `user_id`, `body`, imgdata, posts.`created_at`, `mime` FROM `posts` JOIN users ON posts.user_id = users.id WHERE posts.id = ? AND users.del_flg = 0").execute(
+>       results = db.prepare('SELECT posts.* FROM `posts` JOIN users ON posts.user_id = users.id WHERE posts.`id` = ? AND users.del_flg = 0').execute(
 ```
 
-各種サービスを再起動し、ベンチマークを再実行する。
+TODO: imgdata
 
-```bash
-sudo rm /var/log/nginx/access.log && sudo systemctl restart nginx
-sudo rm /var/log/mysql/mysql-slow.log && sudo systemctl restart mysql
-sudo systemctl restart isu-ruby
-```
+各種サービスを再起動し、ベンチマークを再実行すると、得点が伸びている。
 
-```bash
-./bin/benchmarker -u userdata -t http://192.168.1.10
-```
-
-得点が伸びている。
-
-> {"pass":true,"score":43605,"success":41532,"fail":0,"messages":[]}
+> {"pass":true,"score":24644,"success":26044,"fail":294,"messages":["response code should be 200, got 500 (GET /posts)","response code should be 200, got 500 (GET /posts/4795)","ステータスコードが正しくありません: expected 422, got 500 (POST /)"]}
 
 ## `posts.created_at` への降順インデックスの追加
 
