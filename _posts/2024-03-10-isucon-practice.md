@@ -430,7 +430,65 @@ mysql > EXPLAIN SELECT posts.`id`, `user_id`, `body`, posts.`created_at`, `mime`
 
 > {"pass":true,"score":36029,"success":37966,"fail":420,"messages":["response code should be 200, got 500 (GET /posts)"]}
 
+## `make_posts` にある `posts` と `comments` のN+1問題の解消 その1（45000点）
+
+`make_posts` にはまだ2箇所N+1問題が残っている。各postに対するコメントを取得する部分と、各postに対するコメント数を求める部分で、どちらも同じくらい実行時間がかかっている。まずは前者を直す。
+
+`app.rb` を修正して、各postに対するコメントをDBへの1回のクエリで取得するようにする。
+
+```diff
+107c107,116
+<         posts = []
+---
+>         comments_query = "SELECT ranked.post_id, ranked.comment, users.account_name FROM (SELECT *, RANK() OVER (PARTITION BY post_id ORDER BY created_at DESC) AS rank_new FROM comments WHERE post_id IN (?)) ranked JOIN users ON ranked.user_id = users.id"
+>         unless all_comments
+>           comments_query += ' WHERE rank_new <= 3'
+>         end
+>
+>         comments = db.prepare(comments_query).execute(
+>           results.map { |post| post[:id] }
+>         )
+>
+>         id_to_post = {}
+108a118,120
+>           id_to_post[post[:id]] = post
+>           post[:comments] = []
+>           post[:user] = { account_name: post[:account_name] }
+112,129d123
+<
+<           query = 'SELECT * FROM `comments` WHERE `post_id` = ? ORDER BY `created_at` DESC'
+<           unless all_comments
+<             query += ' LIMIT 3'
+<           end
+<           comments = db.prepare(query).execute(
+<             post[:id]
+<           ).to_a
+<           comments.each do |comment|
+<             comment[:user] = db.prepare('SELECT * FROM `users` WHERE `id` = ?').execute(
+<               comment[:user_id]
+<             ).first
+<           end
+<           post[:comments] = comments.reverse
+<
+<           post[:user] = { account_name: post[:account_name] }
+<
+<           posts.push(post)
+132c126,130
+<         posts
+---
+>         comments.to_a.each do |comment|
+>           id_to_post[comment[:post_id]][:comments].push({ comment: comment[:comment], user: { account_name: comment[:account_name] } })
+>         end
+>
+>         id_to_post.values
+```
+
+各種サービスを再起動してからベンチマークを走り直すと、得点が上がる。
+
+> {"pass":true,"score":45371,"success":47872,"fail":529,"messages":["response code should be 200, got 500 (GET /posts)"]}
+
 ## 
+
 
 
 
@@ -933,23 +991,6 @@ sudo systemctl restart isu-ruby
 > {"pass":true,"score":150649,"success":144327,"fail":0,"messages":[]}
 
 mysqldのCPU使用率が落ちて、50%ほどに減っている。rubyが4 * 30%、nginxが15% + 5%程度を占めている。
-
-## リファクタリング
-
-```diff
-110,113c110,113
-<         if all_comments
-<           query = "SELECT ranked.post_id, ranked.comment, users.account_name FROM (SELECT *, RANK() OVER (PARTITION BY post_id ORDER BY created_at DESC) AS rank_new FROM comments) ranked JOIN users ON ranked.user_id = users.id AND post_id IN (?) ORDER BY ranked.created_at DESC"
-<         else
-<           query = "SELECT ranked.post_id, ranked.comment, users.account_name FROM (SELECT *, RANK() OVER (PARTITION BY post_id ORDER BY created_at DESC) AS rank_new FROM comments) ranked JOIN users ON ranked.user_id = users.id WHERE rank_new <= 3 AND post_id IN (?) ORDER BY ranked.created_at DESC"
----
->         query = "SELECT ranked.post_id, ranked.comment, users.account_name FROM (SELECT *, RANK() OVER (PARTITION BY post_id ORDER BY created_at DESC) AS rank_new FROM comments WHERE post_id IN (?)) ranked JOIN users ON ranked.user_id = users.id"a
->
->         unless all_comments
->           query += ' WHERE rank_new <= 3'
-```
-
-スコアには影響無し。
 
 ## 静的ファイルをnginxから配信する
 
