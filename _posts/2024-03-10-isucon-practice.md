@@ -357,18 +357,32 @@ TODO: imgdata
 
 > {"pass":true,"score":24644,"success":26044,"fail":294,"messages":["response code should be 200, got 500 (GET /posts)","response code should be 200, got 500 (GET /posts/4795)","ステータスコードが正しくありません: expected 422, got 500 (POST /)"]}
 
-## `posts.created_at` への降順インデックスの追加
+## `posts.created_at` への降順インデックスの追加（33000点）
 
+`alp` を実行すると、依然として `GET /` が一番時間がかかっている。stackprofで `GET /` に対応するブロックを調べる。
 
-`alp` を実行すると、依然として GET / が一番時間がかかっている。MySQLのスロークエリログを見ると、
+```bash
+stackprof private_isu/webapp/ruby/tmp/stackprof-wall-*.dump --method 'block in <class:App>' --sort-total
+```
+
+すると、以下の2行にそれぞれ同じくらい（若干前者のほうが多く）の時間がかかっていることがわかる。
+
+```ruby
+results = db.query("SELECT posts.`id`, `user_id`, `body`, posts.`created_at`, `mime` FROM `posts` JOIN users ON posts.user_id = users.id WHERE users.del_flg = 0 ORDER BY `created_at` DESC LIMIT #{POSTS_PER_PAGE}")
+posts = make_posts(results)
+```
+
+前者のDBへのクエリについて調べよう。
+
+MySQLのスロークエリログを見ると、
 
 ```sql
 SELECT posts.`id`, `user_id`, `body`, posts.`created_at`, `mime` FROM `posts` JOIN users ON posts.user_id = users.id WHERE users.del_flg = 0 ORDER BY `created_at` DESC LIMIT 20
 ```
 
-が全体の40%の時間を占めており、rowも多く読み込まれているようである。CPU使用率もmysqldの割合が大きくなっている。
+が全体の50%の時間を占めており、rowも1回あたり1万行ほど読み込まれているようである。CPU使用率もmysqldの割合が大きくなっている。
 
-`posts` テーブルの `created_at` 列に降順インデックスを追加する。すると、 `EXPLAIN` の `rows` も `8769` から `199` に削減される。
+このクエリを効率化するため、 `posts` テーブルの `created_at` 列に降順インデックスを追加する。すると、 `EXPLAIN` の `rows` も約1万から `199` に削減される。
 
 ```bash
 mysql -u isuconp -p isuconp
@@ -377,26 +391,54 @@ mysql > ALTER TABLE posts ADD INDEX created_at_idx(created_at DESC);
 mysql > EXPLAIN SELECT posts.`id`, `user_id`, `body`, posts.`created_at`, `mime` FROM `posts` JOIN users ON posts.user_id = users.id WHERE users.del_flg = 0 ORDER BY `created_at` DESC LIMIT 20;
 ```
 
-各種サービスを再起動し、ベンチマークを再実行する。ところでいままで画像ファイルのキャッシュを消していなかったので、ベンチマーク前に削除するようにしたほうがいいのではないだろうか。といいつつ、消しても消さなくてもベンチマーク結果がほぼ同じだったのでそのままにする。
+各種サービスを再起動し、ベンチマークを再実行すると、スコアが伸びている。
 
-TODO: 消さないとディスクいっぱいになりやすいかも
-TODO: 消さないとベンチマーク安定しないかも
+> {"pass":true,"score":32657,"success":34495,"fail":389,"messages":["response code should be 200, got 500 (GET /)","response code should be 200, got 500 (GET /posts)"]}
 
-```bash
-sudo rm /var/log/nginx/access.log && sudo systemctl restart nginx
-sudo rm /var/log/mysql/mysql-slow.log && sudo systemctl restart mysql
-sudo systemctl restart isu-ruby
+## `make_posts` にある `posts` と `users` の N+1問題の解消（36000点）
+
+`alp` を再実行すると、依然として `GET /` が1位であるものの、2位以下との差が縮まっており、 `GET / ` の性能が改善されたことが窺える。stackprofを使うと、 `GET /` では大部分の時間が `make_posts` に費やされていることがわかる。 `make_posts` は複数のN+1問題を抱えており、どこも同じくらい時間が費やされている。まずは簡単に直せそうな `posts` と `users` の間のN+1問題を解消しよう。
+
+`views/` ディレクトリ以下のソースコードを確認すると、 `post[:user]` の属性は `post[:user][:account_name]` のみが使われていることがわかる。テーブルをJOINした結果から、 `users.account_name` をそのまま使うことにしよう。 `app.rb` を編集する。
+
+```diff
+127,129c127
+<           post[:user] = db.prepare('SELECT * FROM `users` WHERE `id` = ?').execute(
+<             post[:user_id]
+<           ).first
+---
+>           post[:user] = { account_name: post[:account_name] }
+231c229
+<       results = db.query("SELECT posts.`id`, `user_id`, `body`, posts.`created_at`, `mime` FROM `posts` JOIN users ON posts.user_id = users.id WHERE users.del_flg = 0 ORDER BY `created_at` DESC LIMIT #{POSTS_PER_PAGE}")
+---
+>       results = db.query("SELECT posts.`id`, `user_id`, `body`, posts.`created_at`, `mime`, users.account_name FROM `posts` JOIN users ON posts.user_id = users.id WHERE users.del_flg = 0 ORDER BY `created_at` DESC LIMIT #{POSTS_PER_PAGE}")
+246c244
+<       results = db.prepare("SELECT posts.`id`, `user_id`, `body`, `mime`, posts.`created_at` FROM `posts` JOIN users ON posts.user_id = users.id WHERE `user_id` = ? AND users.del_flg = 0 ORDER BY `created_at` DESC LIMIT #{POSTS_PER_PAGE}").execute(
+---
+>       results = db.prepare("SELECT posts.`id`, `user_id`, `body`, `mime`, posts.`created_at`, users.account_name FROM `posts` JOIN users ON posts.user_id = users.id WHERE `user_id` = ? AND users.del_flg = 0 ORDER BY `created_at` DESC LIMIT #{POSTS_PER_PAGE}").execute(
+275c273
+<       results = db.prepare("SELECT posts.`id`, `user_id`, `body`, `mime`, posts.`created_at` FROM `posts` JOIN users ON posts.user_id = users.id WHERE `created_at` <= ? AND users.del_flg = 0 ORDER BY `created_at` DESC LIMIT #{POSTS_PER_PAGE}").execute(
+---
+>       results = db.prepare("SELECT posts.`id`, `user_id`, `body`, `mime`, posts.`created_at`, users.account_name FROM `posts` JOIN users ON posts.user_id = users.id WHERE `created_at` <= ? AND users.del_flg = 0 ORDER BY `created_at` DESC LIMIT #{POSTS_PER_PAGE}").execute(
+284c282
+<       results = db.prepare('SELECT posts.* FROM `posts` JOIN users ON posts.user_id = users.id WHERE posts.`id` = ? AND users.del_flg = 0').execute(
+---
+>       results = db.prepare('SELECT posts.*, users.account_name FROM `posts` JOIN users ON posts.user_id = users.id WHERE posts.`id` = ? AND users.del_flg = 0').execute(
 ```
 
-```bash
-./bin/benchmarker -u userdata -t http://192.168.1.10
-```
+各種サービスを再起動してベンチマークを実行すると、得点が伸びている。
 
-スコアが伸びている。
+> {"pass":true,"score":36029,"success":37966,"fail":420,"messages":["response code should be 200, got 500 (GET /posts)"]}
 
-> {"pass":true,"score":59995,"success":57191,"fail":0,"messages":[]}
+## 
 
-`./alp` を再実行すると、依然として `GET /` が1位であるものの、2位以下との差が縮まっており、 `GET / ` の性能が改善されたことが窺える。
+
+
+
+WIP
+
+
+
 
 MySQLのスロークエリログでは、以下の2つのクエリがほぼ同率1位になっている。
 
