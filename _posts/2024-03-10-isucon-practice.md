@@ -508,7 +508,7 @@ mysql > EXPLAIN SELECT posts.`id`, `user_id`, `body`, posts.`created_at`, `mime`
 
 > {"pass":true,"score":52952,"success":55584,"fail":592,"messages":["response code should be 200, got 500 (GET /posts)"]}
 
-## `POST /` での外部コマンドの使用中止
+## `POST /` での外部コマンドの使用中止（72000点）
 
 `alp` で集計すると、ついに `GET /` が1位から2位に転落し、 `POST /login` が1位になっている。
 
