@@ -508,9 +508,50 @@ mysql > EXPLAIN SELECT posts.`id`, `user_id`, `body`, posts.`created_at`, `mime`
 
 > {"pass":true,"score":52952,"success":55584,"fail":592,"messages":["response code should be 200, got 500 (GET /posts)"]}
 
+## `POST /` での外部コマンドの使用中止
+
+`alp` で集計すると、ついに `GET /` が1位から2位に転落し、 `POST /login` が1位になっている。
+
+stackprofで時間がかかっている原因を順次探っていく。
+
+```bash
+stackprof private_isu/webapp/ruby/tmp/stackprof-wall-*.dump --method 'block in <class:App>' --sort-total
+stackprof private_isu/webapp/ruby/tmp/stackprof-wall-*.dump --method 'Isuconp::App#try_login' --sort-total
+stackprof private_isu/webapp/ruby/tmp/stackprof-wall-*.dump --method 'Isuconp::App#calculate_passhash' --sort-total
+stackprof private_isu/webapp/ruby/tmp/stackprof-wall-*.dump --method 'Isuconp::App#digest' --sort-total
+```
+
+`app.rb` の以下の行に時間がかかっていることがわかる。外部コマンド呼び出しをしているが、外部コマンド呼び出しは遅いことが知られている。
+
+```ruby
+`printf "%s" #{Shellwords.shellescape(src)} | openssl dgst -sha512 | sed 's/^.*= //'`.strip
+```
+
+また、この処理は全体の6割を占めており、 `POST /login` の中だけでなく全体で見ても遅いことがわかる。
+
+```bash
+stackprof private_isu/webapp/ruby/tmp/stackprof-wall-*.dump
+```
+
+`app.rb` を編集し、RubyのOpenSSLライブラリを使うように変更する。
+
+```diff
+6a7
+> require 'openssl'
+84,85c85
+<         # opensslのバージョンによっては (stdin)= というのがつくので取る
+<         `printf "%s" #{Shellwords.shellescape(src)} | openssl dgst -sha512 | sed 's/^.*= //'`.strip
+---
+>         return OpenSSL::Digest::SHA512.hexdigest(src)
+```
+
+各種サービスを再起動し、ベンチマークを実行すると、得点が上がる。
+
+> {"pass":true,"score":72376,"success":74198,"fail":726,"messages":["response code should be 200, got 500 (GET /)","response code should be 200, got 500 (GET /posts)"]}
+
+なお、開催時のISUCONのルールによっては、パスワードをハッシュ化せずに、平文または平文に類似した形で保存することで、さらなる高速化が狙えるようだ。（もちろん実運用されるアプリケーションでやってはいけない）
+
 ## 
-
-
 
 WIP
 
