@@ -631,43 +631,6 @@ sudo systemctl restart isu-ruby
 
 > {"pass":true,"score":80486,"success":77166,"fail":0,"messages":[]}
 
-## `make_posts` にある `comments` と `users` のN+1問題の解消
-
-次に、 `make_posts` 以下で各 `comment` に対して `users` に複数回クエリを投げている問題を解消しよう。再び `views/` ディレクトリ以下のソースコードを確認すると、 `comment` に関しては `comment[:comment]` と `comment[:user][:account_name]` のみが使われていることがわかる。そこで、 `app.rb` を以下のように書き換える。
-
-```diff
-111c111
-<           query = 'SELECT * FROM `comments` WHERE `post_id` = ? ORDER BY `created_at` DESC'
----
->           query = 'SELECT comments.comment, users.account_name FROM `comments` JOIN users ON comments.user_id = users.id WHERE `post_id` = ? ORDER BY comments.`created_at` DESC'
-119,121c119
-<             comment[:user] = db.xquery('SELECT * FROM `users` WHERE `id` = ?',
-<               comment[:user_id]
-<             ).first
----
->             comment[:user] = { account_name: comment[:account_name], }
-```
-
-ベンチマークを実行し、10万点を得る。
-
-```bash
-sudo rm /var/log/nginx/access.log && sudo systemctl restart nginx
-sudo rm /var/log/mysql/mysql-slow.log && sudo systemctl restart mysql
-sudo systemctl restart isu-ruby
-```
-
-```bash
-./bin/benchmarker -u userdata -t http://192.168.1.10
-```
-
-> {"pass":true,"score":100571,"success":96944,"fail":0,"messages":[]}
-
-依然としてMySQLの使用率が高く、スロークエリログを見ると、以下のクエリが30%の時間を使っている。このクエリは `make_posts` にある `posts` と `comments` の間のN+1問題を抱えているクエリである。
-
-```sql
-SELECT comments.comment, users.account_name FROM `comments` JOIN users ON comments.user_id = users.id WHERE `post_id` = '7382' ORDER BY comments.`created_at` DESC LIMIT 3;
-```
-
 ## `make_posts` にある `posts` と `comments` のN+1問題の解消
 
 N+1問題を解消しよう。各postに対するコメント数を求める部分と、各postに対するコメントを取得する部分がある。まずは後者を直そう。 `app.rb` を修正する。計算量O(MN)の部分ができてしまっているが、私がRubyに詳しくなくてプログラムを書くのが難しいのと、当面はボトルネックにならないはずなので今は妥協する。
