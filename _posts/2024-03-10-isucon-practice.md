@@ -430,7 +430,7 @@ mysql > EXPLAIN SELECT posts.`id`, `user_id`, `body`, posts.`created_at`, `mime`
 
 > {"pass":true,"score":36029,"success":37966,"fail":420,"messages":["response code should be 200, got 500 (GET /posts)"]}
 
-## `make_posts` にある `posts` と `comments` のN+1問題の解消 その1（45000点）
+## `make_posts` にある `posts` と `comments` のN+1問題の解消 1/2（45000点）
 
 `make_posts` にはまだ2箇所N+1問題が残っている。各postに対するコメントを取得する部分と、各postに対するコメント数を求める部分で、どちらも同じくらい実行時間がかかっている。まずは前者を直す。
 
