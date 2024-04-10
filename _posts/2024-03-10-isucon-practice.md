@@ -483,13 +483,32 @@ mysql > EXPLAIN SELECT posts.`id`, `user_id`, `body`, posts.`created_at`, `mime`
 >         id_to_post.values
 ```
 
-各種サービスを再起動してからベンチマークを走り直すと、得点が上がる。
+各種サービスを再起動してからベンチマークを走らせ直すと、得点が上がる。
 
 > {"pass":true,"score":45371,"success":47872,"fail":529,"messages":["response code should be 200, got 500 (GET /posts)"]}
 
+## `make_posts` にある `posts` と `comments` のN+1問題の解消 2/2（53000点）
+
+`alp` で集計すると、いまだに `GET /` に時間がかかっている。stackprofでも `make_posts` にある残り1つのN+1問題に時間がかかっていることがわかる。そのN+1問題を直そう。 `app.rb` を編集する。
+
+```diff
+121,123d120
+<           post[:comment_count] = db.prepare('SELECT COUNT(*) AS `count` FROM `comments` WHERE `post_id` = ?').execute(
+<             post[:id]
+<           ).first[:count]
+127a125,129
+>         end
+>
+>         comment_counts = db.prepare("SELECT post_id, COUNT(*) AS `count` FROM `comments` WHERE post_id IN (?) GROUP BY post_id").execute(results.map { |post| post[:id] })
+>         comment_counts.to_a.each do |comment_count|
+>           id_to_post[comment_count[:post_id]][:comment_count] = comment_count[:count]
+```
+
+各種サービスを再起動してからベンチマークを走らせ直すと、得点が上がる。
+
+> {"pass":true,"score":52952,"success":55584,"fail":592,"messages":["response code should be 200, got 500 (GET /posts)"]}
+
 ## 
-
-
 
 
 
