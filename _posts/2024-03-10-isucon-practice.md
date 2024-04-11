@@ -551,6 +551,29 @@ stackprof private_isu/webapp/ruby/tmp/stackprof-wall-*.dump
 
 なお、開催時のISUCONのルールによっては、パスワードをハッシュ化せずに、平文または平文に類似した形で保存することで、さらなる高速化が狙えるようだ。（もちろん実運用されるアプリケーションでやってはいけない）
 
+## `comments` テーブルの `user_id` 列にインデックスの追加（78000点）
+
+`alp` で集計すると、再び `GET /` が1位になっている。stackprofで `GET /` のプロファイリングをとると、4回のSQLでの問い合わせに時間がかかっていることがわかる。MySQLのスロークエリログを集計しても `GET /` に関わるクエリはすべてRows examineが小さく、インデックスが効いていることがわかる。 `GET /` を高速化することは難しそうだ。
+
+気持ちを切り替えて、 `alp` で2位のエンドポイント `GET ^/@\w+$` のほうを見てみよう。stackprofを使うとこちらもMySQLへの問い合わせに時間がかかっていることがわかる。スロークエリログを見ると、1位と2位のクエリ
+
+```sql
+SELECT COUNT(*) AS count FROM `comments` WHERE `user_id` = 124\G
+SELECT posts.`id`, `user_id`, `body`, `mime`, posts.`created_at`, users.account_name FROM `posts` JOIN users ON posts.user_id = users.id WHERE `user_id` = 271 AND users.del_flg = 0 ORDER BY `created_at` DESC LIMIT 20\G
+```
+
+のRows examineがそれぞれ10万行、1万行になっており、インデックスが使われていないであろうことがわかる。
+
+まずは1つ目のクエリ用に、 `comments` テーブルの `user_id` 列にインデックスを追加しよう。
+
+```sql
+ALTER TABLE comments ADD INDEX user_id_idx (user_id);
+```
+
+各種サービスを再起動し、ベンチマークを再実行する。得点が伸びる。
+
+> {"pass":true,"score":77845,"success":79655,"fail":780,"messages":["response code should be 200, got 500 (GET /posts)"]}
+
 ## 
 
 WIP
@@ -702,265 +725,6 @@ SELECT * FROM `users` WHERE `id` = '907';
 
 が1位のクエリになった。
 
-## `make_posts` にある `posts` と `users` のN+1問題の解消
-
-前述のクエリ自体は、すでにインデックスも使用されており、高速化の余地は小さい。ただし、 `make_posts` 関数がN+1問題を抱えており、前述のクエリを繰り返し呼んでいるので、クエリの呼び出し回数を減らせることが期待できる。
-
-まずは `make_posts` 以下での `posts` と `users` の間にあるN+1問題を解消しよう。
-
-`views/` ディレクトリ以下のソースコードを確認すると、 `post[:user]` の属性は `post[:user][:account_name]` のみが使われていることがわかるため、 `users` の全ての列を追加する必要はない。
-
-```diff
-125,127c125
-<           post[:user] = db.xquery('SELECT * FROM `users` WHERE `id` = ?',
-<             post[:user_id]
-<           ).first
----
->           post[:user] = { account_name: post[:account_name], }
-228c226
-<       results = db.query("SELECT posts.`id`, `user_id`, `body`, posts.`created_at`, `mime` FROM `posts` JOIN users ON posts.user_id = users.id WHERE users.del_flg = 0 ORDER BY `created_at` DESC LIMIT #{POSTS_PER_PAGE}")
----
->       results = db.query("SELECT posts.`id`, `user_id`, `body`, posts.`created_at`, `mime`, users.account_name FROM `posts` JOIN users ON posts.user_id = users.id WHERE users.del_flg = 0 ORDER BY `created_at` DESC LIMIT #{POSTS_PER_PAGE}")
-243c241
-<       results = db.xquery("SELECT posts.`id`, `user_id`, `body`, posts.`created_at`, `mime` FROM `posts` JOIN users ON posts.user_id = users.id WHERE `user_id` = ? AND users.del_flg = 0 ORDER BY `created_at` DESC LIMIT #{POSTS_PER_PAGE}",
----
->       results = db.xquery("SELECT posts.`id`, `user_id`, `body`, posts.`created_at`, `mime`, users.account_name FROM `posts` JOIN users ON posts.user_id = users.id WHERE `user_id` = ? AND users.del_flg = 0 ORDER BY `created_at` DESC LIMIT #{POSTS_PER_PAGE}",
-272c270
-<       results = db.xquery("SELECT posts.`id`, `user_id`, `body`, posts.`created_at`, `mime` FROM `posts` JOIN users ON posts.user_id = users.id WHERE posts.created_at <= ? AND users.del_flg = 0 ORDER BY `created_at` DESC LIMIT #{POSTS_PER_PAGE}",
----
->       results = db.xquery("SELECT posts.`id`, `user_id`, `body`, posts.`created_at`, `mime`, users.account_name FROM `posts` JOIN users ON posts.user_id = users.id WHERE posts.created_at <= ? AND users.del_flg = 0 ORDER BY `created_at` DESC LIMIT #{POSTS_PER_PAGE}",
-281c279
-<       results = db.xquery("SELECT posts.`id`, `user_id`, `body`, imgdata, posts.`created_at`, `mime` FROM `posts` JOIN users ON posts.user_id = users.id WHERE posts.id = ? AND users.del_flg = 0",
----
->       results = db.xquery("SELECT posts.`id`, `user_id`, `body`, imgdata, posts.`created_at`, `mime`, users.account_name FROM `posts` JOIN users ON posts.user_id = users.id WHERE posts.id = ? AND users.del_flg = 0",
-```
-
-各種サービスを再起動してベンチマークを実行すると、スコアが伸びている。
-
-```bash
-sudo rm /var/log/nginx/access.log && sudo systemctl restart nginx
-sudo rm /var/log/mysql/mysql-slow.log && sudo systemctl restart mysql
-sudo systemctl restart isu-ruby
-```
-
-```bash
-./bin/benchmarker -u userdata -t http://192.168.1.10
-```
-
-> {"pass":true,"score":80486,"success":77166,"fail":0,"messages":[]}
-
-## `make_posts` にある `posts` と `comments` のN+1問題の解消
-
-N+1問題を解消しよう。各postに対するコメント数を求める部分と、各postに対するコメントを取得する部分がある。まずは後者を直そう。 `app.rb` を修正する。計算量O(MN)の部分ができてしまっているが、私がRubyに詳しくなくてプログラムを書くのが難しいのと、当面はボトルネックにならないはずなので今は妥協する。
-
-```diff
-104a105,112
->         if all_comments
->           query = "SELECT ranked.post_id, ranked.comment, users.account_name FROM (SELECT *, RANK() OVER (PARTITION BY post_id ORDER BY created_at DESC) AS rank_new FROM comments) ranked JOIN users ON ranked.use\
-r_id = users.id AND post_id IN (?) ORDER BY ranked.created_at DESC"
->         else
->           query = "SELECT ranked.post_id, ranked.comment, users.account_name FROM (SELECT *, RANK() OVER (PARTITION BY post_id ORDER BY created_at DESC) AS rank_new FROM comments) ranked JOIN users ON ranked.use\
-r_id = users.id WHERE rank_new <= 3 AND post_id IN (?) ORDER BY ranked.created_at DESC"
->         end
->
->         comments = db.xquery(query, results.map { |post| post[:id] })
->
-110,121c118,122
-<
-<           query = 'SELECT * FROM `comments` WHERE `post_id` = ? ORDER BY `created_at` DESC'
-<           unless all_comments
-<             query += ' LIMIT 3'
-<           end
-<           comments = db.xquery(query,
-<             post[:id]
-<           ).to_a
-<           comments.each do |comment|
-<             comment[:user] = db.xquery('SELECT * FROM `users` WHERE `id` = ?',
-<               comment[:user_id]
-<             ).first
----
->           post_comments = []
->           comments.to_a.each do |comment|
->             if comment[:post_id] == post[:id]
->               post_comments.push({ comment: comment[:comment], user: { account_name: comment[:account_name] } })
->             end
-123c124
-<           post[:comments] = comments.reverse
----
->           post[:comments] = post_comments
-```
-
-各種サービスを再起動し、ベンチマークを実行すると、スコアが上がっている。
-
-```bash
-sudo rm /var/log/nginx/access.log && sudo systemctl restart nginx
-sudo rm /var/log/mysql/mysql-slow.log && sudo systemctl restart mysql
-sudo systemctl restart isu-ruby
-```
-
-```bash
-./bin/benchmarker -u userdata -t http://192.168.1.10
-```
-
-> {"pass":true,"score":122521,"success":118421,"fail":0,"messages":[]}
-
-スロークエリログを見ると各postのコメント数を数えるN+1問題が一番時間がかかるようになっているので、そこを直す。こちらもアルゴリズムが計算量O(MN)になってしまっているが、直すのは後にしよう。
-
-```diff
-112a113,114
->         comment_counts = db.xquery("SELECT post_id, COUNT(*) AS `count` FROM `comments` WHERE post_id IN (?) GROUP BY post_id", results.map { |post| post[:id] })
->
-115,117c117,121
-<           post[:comment_count] = db.xquery('SELECT COUNT(*) AS `count` FROM `comments` WHERE `post_id` = ?',
-<             post[:id]
-<           ).first[:count]
----
->           comment_counts.to_a.each do |comment_count|
->             if comment_count[:post_id] == post[:id]
->               post[:comment_count] = comment_count[:count]
->             end
->           end
-```
-
-サービスを再起動して、ベンチマークを取ると、スコアが上がっている。
-
-```bash
-sudo rm /var/log/nginx/access.log && sudo systemctl restart nginx
-sudo rm /var/log/mysql/mysql-slow.log && sudo systemctl restart mysql
-sudo systemctl restart isu-ruby
-```
-
-```bash
-./bin/benchmarker -u userdata -t http://192.168.1.10
-```
-
-> {"pass":true,"score":153057,"success":148409,"fail":0,"messages":[]}
-
-CPU使用率は、mysqldが70%、rubyが4 * 17%、nginxが14% + 5%くらいで、MySQLからボトルネックが移動しつつある。
-
-`alp` でアクセスログを集計すると、 `GET /` は2位に落ち、 `POST /login` が1位に躍り出ている。
-
-```bash
-sudo ./alp json --file /var/log/nginx/access.log --sort sum -r -m "^/image/\d+\.(jpg|png|gif)$,^/posts/\d+$,^/@\w+$"
-```
-
-MySQLのスロークエリログを集計すると、1位と2位のクエリがそれぞれ以下になっている。
-
-```sql
-SELECT COUNT(*) AS count FROM `comments` WHERE `user_id` = '369';
-SELECT posts.`id`, `user_id`, `body`, posts.`created_at`, `mime`, users.account_name FROM `posts` JOIN users ON posts.user_id = users.id WHERE `user_id` = '63' AND users.del_flg = 0 ORDER BY `created_at` DESC LIMIT 20;
-```
-
-それぞれ、Rows examinedが100k、10k行になっており、インデックスが効いていないことが観察される。
-
-## stackprofによるprofiling
-
-`POST /login` のボトルネックを探すため、[stackprof](https://github.com/tmm1/stackprof)を用いてprofilingする。
-
-`Gemfile` に以下の行を追加する。
-
-```
-gem 'stackprof'
-```
-
-`app.rb` に以下の行を追加する。なお、intervalのデフォルト値は1000（μs）になっているが、それだとボトルネックでない部分が検出されてしまうようだ。
-
-
-```diff
-6a7
-> require 'stackprof'
-9a11,14
->     use StackProf::Middleware, enabled: true,
->                                mode: :wall,
->                                interval: 100,
->                                save_every: 5
-```
-
-`bundle` でGemをインストールする。
-
-```bash
-bundle
-```
-
-stackprofが出力するファイルを削除し、各種サービスを再起動する。
-
-```bash
-rm private_isu/webapp/ruby/tmp/stackprof-*.dump
-sudo rm /var/log/nginx/access.log && sudo systemctl restart nginx
-sudo rm /var/log/mysql/mysql-slow.log && sudo systemctl restart mysql
-sudo systemctl restart isu-ruby
-```
-
-ベンチマークを実行する。
-
-```bash
-./bin/benchmarker -u userdata -t http://192.168.1.10
-```
-
-プロファイラを入れた影響で、スコアは下がる。
-
-> {"pass":true,"score":91964,"success":88927,"fail":0,"messages":[]}
-
-プロファイリングした結果を集計する。
-
-```bash
-stackprof private_isu/webapp/ruby/tmp/stackprof-wall-*.dump
-```
-
-すると、以下の行が突出して時間がかかっていることがわかる。
-
-```
-     42523  (47.2%)       42523  (47.2%)     Kernel#`
-```
-
-この行に着目して再びプロファイリング結果を集計すると、 `Isuconp::App#digest` で呼ばれている外部コマンド呼び出しに時間がかかっていることがわかる。
-
-```bash
-stackprof private_isu/webapp/ruby/tmp/stackprof-wall-*.dump --method 'Kernel#`'
-```
-
-```
-Kernel#` (<cfunc>:1)
-  samples:  42523 self (47.2%)  /   42523 total (47.2%)
-  callers:
-    42523  (  100.0%)  Isuconp::App#digest
-  code:
-        SOURCE UNAVAILABLE
-```
-
-## `digest` の高速化
-
-外部コマンド呼び出しを止めて、RubyのOpenSSLライブラリを使うように変更する。
-
-```diff
-7a8
-> require 'openssl'
-87,88c88
-<         # opensslのバージョンによっては (stdin)= というのがつくので取る
-<         `printf "%s" #{Shellwords.shellescape(src)} | openssl dgst -sha512 | sed 's/^.*= //'`.strip
----
->         return OpenSSL::Digest::SHA512.hexdigest(src)
-```
-
-各種サービスを再起動し、ベンチマークを実行すると、スコアが上がる。
-
-```bash
-rm private_isu/webapp/ruby/tmp/stackprof-*.dump
-sudo rm /var/log/nginx/access.log && sudo systemctl restart nginx
-sudo rm /var/log/mysql/mysql-slow.log && sudo systemctl restart mysql
-sudo systemctl restart isu-ruby
-```
-
-```bash
-./bin/benchmarker -u userdata -t http://192.168.1.10
-```
-
-> {"pass":true,"score":125407,"success":120420,"fail":0,"messages":[]}
-
-なお、開催時のISUCONのルールによっては、パスワードをハッシュ化せずに、平文または平文に類似した形で保存することで、さらなる高速化が狙えるようだ。（もちろん実運用されるアプリケーションでやってはいけない）
-
-`alp` で集計すると再び `GET /` が1位になっている。stackprofで集計すると `Mysql2::Client#_query` で27%、 `String#gsub` で10%の時間がかかっている。MySQLのスロークエリを集計すると、遅いクエリは変わっていない。
-
 ## No space left on device
 
 作業を進めていると、「No space left on device」と表示されてアプリが正常に動作しなくなることがある。MySQLのバイナリログを消したり、ディスク上に保存した画像ファイルを削除したり、stackprofのファイルを消すことで解消できるはずだ。MySQLのバイナリログを削除するには、
@@ -973,34 +737,6 @@ mysql> PURGE BINARY LOGS BEFORE NOW();
 とすればよい。
 
 TODO: 保存しないようにしないとディスクが……
-
-
-## `comments` テーブルにインデックスを追加する
-
-`comments` テーブルの `user_id` 列にインデックスを追加することで、 `EXPLAIN` したときの `rows` が10万行程度から100行程度に減少する。
-
-```
-mysql -u isuconp -p isuconp
-mysql> EXPLAIN SELECT COUNT(*) AS count FROM `comments` WHERE `user_id` = '369';
-mysql> SHOW CREATE TABLE comments;
-mysql> ALTER TABLE comments ADD INDEX user_id_idx (user_id);
-mysql> SHOW CREATE TABLE comments;
-mysql> EXPLAIN SELECT COUNT(*) AS count FROM `comments` WHERE `user_id` = '369';
-mysql> exit;
-```
-
-```bash
-rm private_isu/webapp/ruby/tmp/stackprof-*.dump
-sudo rm /var/log/nginx/access.log && sudo systemctl restart nginx
-sudo rm /var/log/mysql/mysql-slow.log && sudo systemctl restart mysql
-sudo systemctl restart isu-ruby
-```
-
-```bash
-./bin/benchmarker -u userdata -t http://192.168.1.10
-```
-
-> {"pass":true,"score":126353,"success":121038,"fail":0,"messages":[]}
 
 ## `posts` テーブル
 続いて、もう一つのクエリでもインデックスが効くようにする。まずはRDBMSにインデックスを追加する。
