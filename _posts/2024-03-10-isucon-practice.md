@@ -592,7 +592,7 @@ ALTER TABLE posts ADD INDEX user_created_idx (user_id, created_at DESC);
 
 > {"pass":true,"score":26792,"success":27767,"fail":288,"messages":["response code should be 200, got 500 (GET /posts)"]}
 
-アプリ側で `FORCE INDEX` を使って、使うべきインデックスを指示するようにする。現時点で `posts` テーブルには2種類のインデックス `created_at_idx (created_at DESC)` と `user_created_idx (user_id, created_at DESC)` があるので、まず時刻から絞り込むべきクエリでは前者のインデックスを使い、まずユーザーから絞り込むべきクエリでは後者のインデックスを使いたい。実際には、次の1つのクエリの分だけ `FORCE INDEX` をつければ十分のようだ。
+MySQLのスロークエリログを集計すると、極端に遅いクエリが1つできていることがわかる。そこで、アプリ側で `FORCE INDEX` を使って、使うべきインデックスを指示するようにする。現時点で `posts` テーブルには2種類のインデックス `created_at_idx (created_at DESC)` と `user_created_idx (user_id, created_at DESC)` があるので、まず時刻から絞り込むべきクエリでは前者のインデックスを使い、まずユーザーから絞り込むべきクエリでは後者のインデックスを使いたい。次の1つのクエリの分だけ `FORCE INDEX` をつければ十分のようだ。
 
 ```diff
 229c229
