@@ -611,6 +611,27 @@ MySQLのスロークエリログを集計すると、極端に遅いクエリが
 EXPLAIN SELECT posts.`id`, `user_id`, `body`, `mime`, posts.`created_at`, users.account_name FROM `posts` JOIN users ON posts.user_id = users.id WHERE `user_id` = 271 AND users.del_flg = 0 ORDER BY `created_at` DESC LIMIT 20\G
 ```
 
+## 静的ファイルをnginxから配信する（100000点）
+
+`alp` で集計すると、favicon、JavaScript、CSSファイルの項目が上位で目立っている。これらのファイルはRubyを経由して返されており、しかもこれらのHTTP status codeは全て2XXになっていて、キャッシュが効いていないことがわかる。nginxから直接配信して、キャッシュも効かせよう。
+
+`/etc/nginx/sites-avaliable/isucon.conf` に以下を追加する。
+
+```diff
+8a9,13
+>   location ~ ^/(favicon\.ico|css/|js/|img/) {
+>     root /home/isucon/private_isu/webapp/public/;
+>     expires 1d;
+>   }
+>
+```
+
+各種サービスを再起動してベンチマークを走らせると、得点が上がる。
+
+> {"pass":true,"score":101353,"success":104468,"fail":944,"messages":["response code should be 200, got 500 (GET /posts)"]}
+
+`alp` で分析すると、静的ファイルそれぞれについて、2XXが1度だけであとは3XXのレスポンスを高速に返せるようになっていることがわかる。
+
 ## 
 
 WIP
@@ -774,31 +795,6 @@ mysql> PURGE BINARY LOGS BEFORE NOW();
 とすればよい。
 
 TODO: 保存しないようにしないとディスクが……
-
-## 静的ファイルをnginxから配信する
-
-topコマンドでのCPU使用率、alp、MySQLのスロークエリログ、stackprofの出力などを見ても、改善できるはっきりとしたボトルネックを見つけづらくなってきている。
-
-alpで集計すると、3位から6位がfavicon、JavaScript、CSSファイルで占められている。これらのファイルはRubyを経由して返されており、しかもこれらのHTTP status codeは全て2XXになっていて、キャッシュが効いていないことがわかる。nginxから直接配信して、キャッシュも効かせよう。
-
-```bash
-sudo nano /etc/nginx/sites-enabled/isucon.conf
-```
-
-```diff
-6a7,11
->   location ~ ^/(favicon\.ico|css/|js/|img/) {
->     root /home/isucon/private_isu/webapp/public/;
->     expires 1d;
->   }
->
-```
-
-サービス再起動、ベンチマークをすると、以下のように得点が伸びる。
-
-> {"pass":true,"score":195120,"success":189827,"fail":2,"messages":["静的ファイルが正しくありません (GET /image/23075.png)","静的ファイルが正しくありません (GET /image/23106.png)"]}
-
-alpの分析でも、静的ファイルそれぞれについて、2XXが1度だけであとは3XXのレスポンスを高速に返せるようになっていることがわかる。
 
 ## `INSERT posts` で画像を保存しないようにする
 
