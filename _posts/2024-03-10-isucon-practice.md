@@ -716,7 +716,7 @@ sudo systemctl restart isu-ruby
 <           id_to_post[comment[:post_id]][:comments].push({ comment: comment[:comment], user: { account_name: comment[:account_name] } })
 ```
 
-すると、なんとベンチマーカーは特にエラーなどは起こさず、得点が上がる。
+そして各種サービスをリフレッシュしてからベンチマークをとると、なんとベンチマーカーは特にエラーなどは起こさず、得点が上がる。
 
 > {"pass":true,"score":189000,"success":204338,"fail":2151,"messages":["response code should be 200, got 500 (GET /posts)","静的ファイルが正しくありません (GET /image/15584.png)","静的ファイルが正しくありません (GET /image/15609.png)","静的ファイルが正しくありません (GET /image/15657.png)","静的ファイルが正しくありません (GET /image/15715.png)","静的ファイルが正しくありません (GET /image/15728.png)","静的ファイルが正しくありません (GET /image/15745.png)"]}
 
@@ -732,7 +732,71 @@ sudo systemctl restart isu-ruby
 
 結論としては、許される変更なのかはよくわからないが、とりあえずコメント関係の機能を `app.rb` から削除しよう。
 
-## stackprof を止める
+## No space left on device
+
+作業を進めていると、「No space left on device」と表示されてアプリが正常に動作しなくなることがある。MySQLのバイナリログを消したり、ディスク上に保存した画像ファイルを削除したり、stackprofのファイルを消すことで解消できるはずだ。MySQLのバイナリログを削除するには、
+
+```
+mysql -u isuconp -p isuconp
+mysql> PURGE BINARY LOGS BEFORE NOW();
+```
+
+とすればよい。
+
+## 画像を直接ディスクに保存する（180000点）
+
+MySQLのスロークエリログを見ると、画像をMySQLに保存するクエリが1位になっており、20%以上の時間が使われている。これを変更して、ディスクに直接保存するようにしよう。 `app.rb` を編集する。
+
+app.rb.bak10
+```sql
+303c303
+<         mime = ''
+---
+>         mime, ext = '', ''
+306c306
+<           mime = "image/jpeg"
+---
+>           mime, ext = "image/jpeg", "jpg"
+308c308
+<           mime = "image/png"
+---
+>           mime, ext = "image/png", "png"
+310c310
+<           mime = "image/gif"
+---
+>           mime, ext = "image/gif", "gif"
+316c316
+<         if params['file'][:tempfile].read.length > UPLOAD_LIMIT
+---
+>         if params['file'][:tempfile].size > UPLOAD_LIMIT
+321d320
+<         params['file'][:tempfile].rewind
+326c325
+<           params["file"][:tempfile].read,
+---
+>           '',
+329a329,331
+>         imgfile = IMAGE_DIR + "/#{pid}.#{ext}"
+>         FileUtils.mv(params["file"][:tempfile], imgfile)
+>         FileUtils.chmod(0644, imgfile)
+```
+
+各種サービスやログをリフレッシュしてからベンチマークすると、得点は多少下がるが、スロークエリログは改善されている。
+
+> {"pass":true,"score":183045,"success":197704,"fail":2104,"messages":["response code should be 200, got 500 (GET /posts)"]}
+
+## `GET /posts` のバグを直す（TODO点）
+
+
+## stackprof を止める（TODO点）
+
+ここで、stackprofを無効化して、何点になるか見てみよう。 `app.rb` を編集する。
+
+```diff
+```
+app.rb.bak11
+
+WIP
 
 
 
