@@ -715,10 +715,44 @@ mysql> PURGE BINARY LOGS BEFORE NOW();
 
 とすればよい。
 
-## 
+## 画像を直接ディスクに保存する（220000点）
 
-WIP
+MySQLのスロークエリログを見ると、画像をMySQLに保存するクエリが1位になっており、20%以上の時間が使われている。これを変更して、ディスクに直接保存するようにしよう。 `app.rb` を編集する。
 
+```diff
+311c311
+<         mime = ''
+---
+>         mime, ext = '', ''
+314c314
+<           mime = "image/jpeg"
+---
+>           mime, ext = "image/jpeg", "jpg"
+316c316
+<           mime = "image/png"
+---
+>           mime, ext = "image/png", "png"
+318c318
+<           mime = "image/gif"
+---                                                                                                                                                                                                                   >           mime, ext = "image/gif", "gif"                                                                                                                                                                            324c324
+<         if params['file'][:tempfile].read.length > UPLOAD_LIMIT
+---
+>         if params['file'][:tempfile].size > UPLOAD_LIMIT
+329d328
+<         params['file'][:tempfile].rewind                                                                                                                                                                            334c333
+<           params["file"][:tempfile].read,
+---
+>           '',
+337a337,340
+>
+>         imgfile = IMAGE_DIR + "/#{pid}.#{ext}"
+>         FileUtils.mv(params["file"][:tempfile], imgfile)
+>         FileUtils.chmod(0644, imgfile)
+```
+
+各種サービスやログをリフレッシュしてからベンチマークすると、得点が上がる。
+
+> {"pass":true,"score":222542,"success":216222,"fail":1,"messages":["response code should be 200, got 500 (GET /)"]}
 
 ## コメント機能を消す（TODO点）
 
@@ -762,52 +796,6 @@ WIP
 という説明もあるので、ベンチマーカーが検出していない限りの変更は加えてもいいのかもしれない。書籍でのコードの変更でも、コメントを追加してからキャッシュのTTLが切れるまでの時間はは「存在するべきDOM要素がレスポンスHTMLに存在しない」状態になりうるはずだ。
 
 結論としては、許される変更なのかはよくわからないが、とりあえずコメント関係の機能を `app.rb` から削除しよう。
-
-
-## 画像を直接ディスクに保存する（TODO点）
-
-MySQLのスロークエリログを見ると、画像をMySQLに保存するクエリが1位になっており、20%以上の時間が使われている。これを変更して、ディスクに直接保存するようにしよう。 `app.rb` を編集する。
-
-app.rb.bak10
-```sql
-303c303
-<         mime = ''
----
->         mime, ext = '', ''
-306c306
-<           mime = "image/jpeg"
----
->           mime, ext = "image/jpeg", "jpg"
-308c308
-<           mime = "image/png"
----
->           mime, ext = "image/png", "png"
-310c310
-<           mime = "image/gif"
----
->           mime, ext = "image/gif", "gif"
-316c316
-<         if params['file'][:tempfile].read.length > UPLOAD_LIMIT
----
->         if params['file'][:tempfile].size > UPLOAD_LIMIT
-321d320
-<         params['file'][:tempfile].rewind
-326c325
-<           params["file"][:tempfile].read,
----
->           '',
-329a329,331
->         imgfile = IMAGE_DIR + "/#{pid}.#{ext}"
->         FileUtils.mv(params["file"][:tempfile], imgfile)
->         FileUtils.chmod(0644, imgfile)
-```
-
-各種サービスやログをリフレッシュしてからベンチマークすると、得点は多少下がるが、スロークエリログは改善されている。
-
-> TODO
-
-## `GET /posts` のバグを直す（TODO点）
-
 
 ## stackprof を止める（TODO点）
 
