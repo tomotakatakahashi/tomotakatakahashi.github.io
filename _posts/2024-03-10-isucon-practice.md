@@ -704,6 +704,18 @@ sudo systemctl restart isu-ruby
 
 > {"pass":true,"score":211592,"success":205992,"fail":5,"messages":["静的ファイルが正しくありません (GET /image/20035.png)","静的ファイルが正しくありません (GET /image/20091.jpg)","静的ファイルが正しくありません (GET /image/20100.png)","静的ファイルが正しくありません (GET /image/20132.png)","静的ファイルが正しくありません (GET /image/20140.png)"]}
 
+## No space left on device
+
+作業を進めていると、「No space left on device」と表示されてアプリが正常に動作しなくなることがある。MySQLのバイナリログを消したり、ディスク上に保存した画像ファイルを削除したり、stackprofのファイルを消すことで解消できるはずだ。MySQLのバイナリログを削除するには、
+
+```
+mysql -u isuconp -p isuconp
+mysql> PURGE BINARY LOGS BEFORE NOW();
+```
+
+とすればよい。
+
+## 
 
 WIP
 
@@ -751,16 +763,6 @@ WIP
 
 結論としては、許される変更なのかはよくわからないが、とりあえずコメント関係の機能を `app.rb` から削除しよう。
 
-## No space left on device
-
-作業を進めていると、「No space left on device」と表示されてアプリが正常に動作しなくなることがある。MySQLのバイナリログを消したり、ディスク上に保存した画像ファイルを削除したり、stackprofのファイルを消すことで解消できるはずだ。MySQLのバイナリログを削除するには、
-
-```
-mysql -u isuconp -p isuconp
-mysql> PURGE BINARY LOGS BEFORE NOW();
-```
-
-とすればよい。
 
 ## 画像を直接ディスクに保存する（TODO点）
 
