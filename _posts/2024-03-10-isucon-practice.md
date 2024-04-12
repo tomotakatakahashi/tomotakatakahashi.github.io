@@ -689,7 +689,26 @@ sudo systemctl restart isu-ruby
 
 > {"pass":true,"score":174783,"success":188852,"fail":1981,"messages":["response code should be 200, got 500 (GET /)","response code should be 200, got 500 (GET /posts)","静的ファイルが正しくありません (GET /image/15377.jpg)","静的ファイルが正しくありません (GET /image/15389.png)","静的ファイルが正しくありません (GET /image/15417.png)","静的ファイルが正しくありません (GET /image/15522.png)"]}
 
-## コメント機能を消す（190000点）
+## `GET /posts` のバグを直す（210000点）
+
+今まで全く気付いていなかったが、「20件を一度に取得」で `posts` テーブルと `users` テーブルを `JOIN` するようにしてからずっと、 `GET /posts` がバグっていて500エラーを返し続けている。 `journalctl -xeu isu-ruby` でアプリケーションサーバーのログを見ると、SQLで `created_at` 列が2つあって曖昧なためにエラーが起きていることがわかる。 `app.rb` を編集して、曖昧性を解消する。それだけだと意図しないインデックスが使われてしまうので、 `FORCE INDEX` も追加する。
+
+```diff
+276c276
+<       results = db.prepare("SELECT posts.`id`, `user_id`, `body`, `mime`, posts.`created_at`, users.account_name FROM `posts` JOIN users ON posts.user_id = users.id WHERE `created_at` <= ? AND users.del_flg = 0 ORDER BY `created_at` DESC LIMIT #{POSTS_PER_PAGE}").execute(
+---
+>       results = db.prepare("SELECT posts.`id`, `user_id`, `body`, `mime`, posts.`created_at`, users.account_name FROM `posts` FORCE INDEX (created_at_idx) JOIN users ON posts.user_id = users.id WHERE posts.`created_at` <= ? AND users.del_flg = 0 ORDER BY `created_at` DESC LIMIT #{POSTS_PER_PAGE}").execute(
+```
+
+各種サービスを再起動してベンチマークを実行すると、得点が上がる。ベンチマーカーからの `GET /posts` に関するエラーも消える。
+
+> {"pass":true,"score":211592,"success":205992,"fail":5,"messages":["静的ファイルが正しくありません (GET /image/20035.png)","静的ファイルが正しくありません (GET /image/20091.jpg)","静的ファイルが正しくありません (GET /image/20100.png)","静的ファイルが正しくありません (GET /image/20132.png)","静的ファイルが正しくありません (GET /image/20140.png)"]}
+
+
+WIP
+
+
+## コメント機能を消す（TODO点）
 
 `alp` による集計で上位に来ているエンドポイントは `GET /` である。このエンドポイントはすべてのクエリがインデックスを利用できており、改善するのは難しそうだ。
 
@@ -718,7 +737,7 @@ sudo systemctl restart isu-ruby
 
 そして各種サービスをリフレッシュしてからベンチマークをとると、なんとベンチマーカーは特にエラーなどは起こさず、得点が上がる。
 
-> {"pass":true,"score":189000,"success":204338,"fail":2151,"messages":["response code should be 200, got 500 (GET /posts)","静的ファイルが正しくありません (GET /image/15584.png)","静的ファイルが正しくありません (GET /image/15609.png)","静的ファイルが正しくありません (GET /image/15657.png)","静的ファイルが正しくありません (GET /image/15715.png)","静的ファイルが正しくありません (GET /image/15728.png)","静的ファイルが正しくありません (GET /image/15745.png)"]}
+> TODO
 
 [ISUCONのルール](https://github.com/catatsuy/private-isu/blob/2b7ec5fee0952212cd20740de5eae33c753569c1/manual.md#%E5%88%B6%E7%B4%84%E4%BA%8B%E9%A0%85)に
 
@@ -743,7 +762,7 @@ mysql> PURGE BINARY LOGS BEFORE NOW();
 
 とすればよい。
 
-## 画像を直接ディスクに保存する（180000点）
+## 画像を直接ディスクに保存する（TODO点）
 
 MySQLのスロークエリログを見ると、画像をMySQLに保存するクエリが1位になっており、20%以上の時間が使われている。これを変更して、ディスクに直接保存するようにしよう。 `app.rb` を編集する。
 
@@ -783,7 +802,7 @@ app.rb.bak10
 
 各種サービスやログをリフレッシュしてからベンチマークすると、得点は多少下がるが、スロークエリログは改善されている。
 
-> {"pass":true,"score":183045,"success":197704,"fail":2104,"messages":["response code should be 200, got 500 (GET /posts)"]}
+> TODO
 
 ## `GET /posts` のバグを直す（TODO点）
 
