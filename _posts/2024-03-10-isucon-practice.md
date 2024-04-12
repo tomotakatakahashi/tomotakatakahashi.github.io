@@ -632,212 +632,64 @@ EXPLAIN SELECT posts.`id`, `user_id`, `body`, `mime`, posts.`created_at`, users.
 
 `alp` で分析すると、静的ファイルそれぞれについて、2XXが1度だけであとは3XXのレスポンスを高速に返せるようになっていることがわかる。
 
-## 
+## 画像の読み込みで304を返せるようにする（170000点）
 
-WIP
+`alp` で集計すると、画像を返すエンドポイント `^/image/\d+\.(jpg|png|gif)$` が3位になっている。
 
+先ほど画像をnginxを使って `proxy_cache` でキャッシュするようにしたが、レスポンスのステータスコードはすべて2XXになっている。
 
+画像をMySQLでなくディスクにファイルとして保存するようにして、nginxからファイルとして直接配信することで、304のレスポンスを返せるようにしよう。
 
-
-MySQLのスロークエリログでは、以下の2つのクエリがほぼ同率1位になっている。
-
-```sql
-administrator command: Prepare;
-```
-
-```sql
-SELECT * FROM `users` WHERE `id` = 218;
-```
-
-`top` では、メモリ使用量には依然として余裕があり、CPU使用率はmysqldが100%、rubyが4 * 17%、nginxが7%程度が使われており、MySQLのスロークエリを改善するのがよさそうである。
-
-
-## prepared statementを削減
-「`administrator command: Prepare`」のほうは、[mysql2](https://github.com/brianmario/mysql2)でprepared statementを使っている部分を[mysql2-cs-bind](https://github.com/tagomoris/mysql2-cs-bind)を使ってwebapp側で処理することで、prepared statementを使うことを回避できるようである。（ただし、この変更がセキュアかどうかは不明）
-
-まずは `Gemfile` に以下の変更を加え、
+`/etc/nginx/sites-enabled/isucon.conf` を編集して、 `/image/` 以下のリクエストは `/home/isucon/private_isu/webapp/public/image/` 以下からまずはファイルを探し、もしファイルが見つからなかったらアプリケーションサーバにリバースプロキシするように設定を変更する。
 
 ```diff
-9c9
-< gem "mysql2"
+1,2d0
+< proxy_cache_path /home/isucon/private_isu/webapp/image_cache levels=1:2 keys_zone=IMAGE:10m inactive=24h max_size=1g;
+<
+15,17c13,19
+<     proxy_cache IMAGE;
+<     proxy_cache_valid 200 1d;
+<     proxy_set_header Host $host;
 ---
-> gem "mysql2-cs-bind"
+>     root /home/isucon/private_isu/webapp/public/;
+>     expires 1d;
+>     try_files $uri @app;
+>   }
+>
+>   location @app {
+>     internal;
 ```
 
-`bundle` で `mysql2-cs-bind` をインストールする。
-
-```bash
-bundle
-```
-
-その後、 `app.rb` の `db.prepare(q).execute(p)` を `db.xquery(q, p)` に書き換える。ただし、画像を保存しているクエリのみ、 mysql2-cs-bind からの
-
-> Encoding::CompatibilityError - incompatible character encodings: UTF-8 and ASCII-8BIT
-
-というエラーを回避するため、そのままにしている。
+`app.rb` を変更して、 `/image/` へのリクエストの度にRDBから `/home/isucon/private_isu/webapp/public/image/` 以下に画像ファイルをコピーすることで、ディスクをキャッシュのように使うことにする。
 
 ```diff
-2c2
-< require 'mysql2'
----
-> require 'mysql2-cs-bind'
-57c57
-<           db.prepare(s).execute
----
->           db.query(s)
-62c62
-<         user = db.prepare('SELECT * FROM users WHERE account_name = ? AND del_flg = 0').execute(account_name).first
----
->         user = db.xquery('SELECT * FROM users WHERE account_name = ? AND del_flg = 0', account_name).first
-96c96
-<           db.prepare('SELECT * FROM `users` WHERE `id` = ?').execute(
----
->           db.xquery('SELECT * FROM `users` WHERE `id` = ?',
-107c107
-<           post[:comment_count] = db.prepare('SELECT COUNT(*) AS `count` FROM `comments` WHERE `post_id` = ?').execute(
----
->           post[:comment_count] = db.xquery('SELECT COUNT(*) AS `count` FROM `comments` WHERE `post_id` = ?',
-115c115
-<           comments = db.prepare(query).execute(
----
->           comments = db.xquery(query,
-119c119
-<             comment[:user] = db.prepare('SELECT * FROM `users` WHERE `id` = ?').execute(
----
->             comment[:user] = db.xquery('SELECT * FROM `users` WHERE `id` = ?',
-125c125
-<           post[:user] = db.prepare('SELECT * FROM `users` WHERE `id` = ?').execute(
----
->           post[:user] = db.xquery('SELECT * FROM `users` WHERE `id` = ?',
-200c200
-<       user = db.prepare('SELECT 1 FROM users WHERE `account_name` = ?').execute(account_name).first
----
->       user = db.xquery('SELECT 1 FROM users WHERE `account_name` = ?', account_name).first
-208c208
-<       db.prepare(query).execute(
----
->       db.xquery(query,
-235c235
-<       user = db.prepare('SELECT * FROM `users` WHERE `account_name` = ? AND `del_flg` = 0').execute(
----
->       user = db.xquery('SELECT * FROM `users` WHERE `account_name` = ? AND `del_flg` = 0',
-243c243
-<       results = db.prepare("SELECT posts.`id`, `user_id`, `body`, posts.`created_at`, `mime` FROM `posts` JOIN users ON posts.user_id = users.id WHERE `user_id` = ? AND users.del_flg = 0 ORDER BY `created_at` DESC LIMIT #{POSTS_PER_PAGE}").execute(
----
->       results = db.xquery("SELECT posts.`id`, `user_id`, `body`, posts.`created_at`, `mime` FROM `posts` JOIN users ON posts.user_id = users.id WHERE `user_id` = ? AND users.del_flg = 0 ORDER BY `created_at` DESC LIMIT #{POSTS_PER_PAGE}",
-248c248
-<       comment_count = db.prepare('SELECT COUNT(*) AS count FROM `comments` WHERE `user_id` = ?').execute(
----
->       comment_count = db.xquery('SELECT COUNT(*) AS count FROM `comments` WHERE `user_id` = ?',
-252c252
-<       post_ids = db.prepare('SELECT `id` FROM `posts` WHERE `user_id` = ?').execute(
----
->       post_ids = db.xquery('SELECT `id` FROM `posts` WHERE `user_id` = ?',
-260c260
-<         commented_count = db.prepare("SELECT COUNT(*) AS count FROM `comments` WHERE `post_id` IN (#{placeholder})").execute(
----
->         commented_count = db.xquery("SELECT COUNT(*) AS count FROM `comments` WHERE `post_id` IN (#{placeholder})",
-272c272
-<       results = db.prepare("SELECT posts.`id`, `user_id`, `body`, posts.`created_at`, `mime` FROM `posts` JOIN users ON posts.user_id = users.id WHERE posts.created_at <= ? AND users.del_flg = 0 ORDER BY `created_at` DESC LIMIT #{POSTS_PER_PAGE}").execute(
----
->       results = db.xquery("SELECT posts.`id`, `user_id`, `body`, posts.`created_at`, `mime` FROM `posts` JOIN users ON posts.user_id = users.id WHERE posts.created_at <= ? AND users.del_flg = 0 ORDER BY `created_at` DESC LIMIT #{POSTS_PER_PAGE}",
-281c281
-<       results = db.prepare("SELECT posts.`id`, `user_id`, `body`, imgdata, posts.`created_at`, `mime` FROM `posts` JOIN users ON posts.user_id = users.id WHERE posts.id = ? AND users.del_flg = 0").execute(
----
->       results = db.xquery("SELECT posts.`id`, `user_id`, `body`, imgdata, posts.`created_at`, `mime` FROM `posts` JOIN users ON posts.user_id = users.id WHERE posts.id = ? AND users.del_flg = 0",
-347c347
-<       post = db.prepare('SELECT * FROM `posts` WHERE `id` = ?').execute(params[:id].to_i).first
----
->       post = db.xquery('SELECT * FROM `posts` WHERE `id` = ?', params[:id].to_i).first
-381c381
-<       db.prepare(query).execute(
----
->       db.xquery(query,
-424c424
-<         db.prepare(query).execute(1, id.to_i)
----
->         db.xquery(query, 1, id.to_i)
+7a8
+> require 'fileutils'
+22a24,25
+>     IMAGE_DIR = File.expand_path('../../public/image', __FILE__)
+>
+353a357,361
+>
+>         imgfile = IMAGE_DIR + "/#{post[:id]}.#{params[:ext]}"
+>         f = File.open(imgfile, "w")
+>         f.write(post[:imgdata])
+>         f.close()
 ```
 
-各種サービスを再起動し、ベンチマークを実行しよう。
+各種サービスやログをリフレッシュして、ベンチマークをとると、得点が大幅に上がる。
 
 ```bash
+sudo rm -r private_isu/webapp/image_cache
+rm -r private_isu/webapp/public/image; mkdir private_isu/webapp/public/image
+rm private_isu/webapp/ruby/tmp/stackprof-*.dump
 sudo rm /var/log/nginx/access.log && sudo systemctl restart nginx
 sudo rm /var/log/mysql/mysql-slow.log && sudo systemctl restart mysql
 sudo systemctl restart isu-ruby
 ```
 
-```bash
-./bin/benchmarker -u userdata -t http://192.168.1.10
-```
+> {"pass":true,"score":174783,"success":188852,"fail":1981,"messages":["response code should be 200, got 500 (GET /)","response code should be 200, got 500 (GET /posts)","静的ファイルが正しくありません (GET /image/15377.jpg)","静的ファイルが正しくありません (GET /image/15389.png)","静的ファイルが正しくありません (GET /image/15417.png)","静的ファイルが正しくありません (GET /image/15522.png)"]}
 
-スコアが伸びている。
-
-> {"pass":true,"score":71506,"success":68490,"fail":0,"messages":[]}
-
-`top` コマンドの傾向には変化無し。 `alp` による傾向も変化無し。MySQLのスロークエリログの集計からは、「administrator command: Prepare」が消え、
-
-```sql
-SELECT * FROM `users` WHERE `id` = '907';
-```
-
-が1位のクエリになった。
-
-## No space left on device
-
-作業を進めていると、「No space left on device」と表示されてアプリが正常に動作しなくなることがある。MySQLのバイナリログを消したり、ディスク上に保存した画像ファイルを削除したり、stackprofのファイルを消すことで解消できるはずだ。MySQLのバイナリログを削除するには、
-
-```
-mysql -u isuconp -p isuconp
-mysql> PURGE BINARY LOGS BEFORE NOW();
-```
-
-とすればよい。
-
-TODO: 保存しないようにしないとディスクが……
-
-## `INSERT posts` で画像を保存しないようにする
-
-MySQLのスロークエリログを見ると `INSERT posts` のクエリが2位になっており、大きな画像ファイルをMySQLに保存していて遅くなっていることが推察される。ディスクに直接保存するようにしてみよう。
-
-
-```diff
-315c315
-<         mime = ''
----
->         mime, ext = '', ''
-318c318
-<           mime = "image/jpeg"
----
->           mime, ext = "image/jpeg", "jpg"
-320c320
-<           mime = "image/png"
----
->           mime, ext = "image/png", "png"
-322c322
-<           mime = "image/gif"
----
->           mime, ext = "image/gif", "gif"
-328c328
-<         if params['file'][:tempfile].read.length > UPLOAD_LIMIT
----
->         if params['file'][:tempfile].size > UPLOAD_LIMIT
-333d332
-<         params['file'][:tempfile].rewind
-338c337
-<           params["file"][:tempfile].read,
----
->           '',
-341a341,344
->
->         imgfile = IMAGE_DIR + "/#{pid}.#{ext}"
->         FileUtils.mv(params["file"][:tempfile], imgfile)
->         FileUtils.chmod(0644, imgfile)
-```
-
-> {"pass":true,"score":196959,"success":191136,"fail":0,"messages":[]}
-
-## コメント機能を消す
+## コメント機能を消す（
 
 `alp` による集計で上位に来ているエンドポイントは `GET /` であり、MySQLのスロークエリログでは `comments` テーブルへの `SELECT` のクエリが上位に来ている。しかし、 `comments` テーブルへのクエリを、インデックスを追加するなどの手段でこれ以上高速化するのは難しそうだ。
 
