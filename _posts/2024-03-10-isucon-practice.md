@@ -689,9 +689,9 @@ sudo systemctl restart isu-ruby
 
 > {"pass":true,"score":174783,"success":188852,"fail":1981,"messages":["response code should be 200, got 500 (GET /)","response code should be 200, got 500 (GET /posts)","静的ファイルが正しくありません (GET /image/15377.jpg)","静的ファイルが正しくありません (GET /image/15389.png)","静的ファイルが正しくありません (GET /image/15417.png)","静的ファイルが正しくありません (GET /image/15522.png)"]}
 
-## コメント機能を消す（
+## コメント機能を消す（190000点）
 
-`alp` による集計で上位に来ているエンドポイントは `GET /` であり、MySQLのスロークエリログでは `comments` テーブルへの `SELECT` のクエリが上位に来ている。しかし、 `comments` テーブルへのクエリを、インデックスを追加するなどの手段でこれ以上高速化するのは難しそうだ。
+`alp` による集計で上位に来ているエンドポイントは `GET /` である。このエンドポイントはすべてのクエリがインデックスを利用できており、改善するのは難しそうだ。
 
 書籍では `comments` テーブルをMemcachedにキャッシュさせることで高速化しているようだ。
 
@@ -701,16 +701,24 @@ sudo systemctl restart isu-ruby
 
 と書いてあり、コメントを投稿するとそれ以降のリクエストでは全て新しいコメントが反映されたレスポンスが返るという雰囲気のことが書いてある。しかし一方で、書籍に記載されている `app.rb` の変更点（ref. [サポートページ](https://github.com/tatsujin-web-performance/tatsujin-web-performance/commit/8de837130c50186ce5cd08b560552cd97a1e9b34)）を見ると、キャッシュのTTLである10秒間がすぎるまで新しいコメントがレスポンスに反映されない（場合がある）実装になっている。
 
-極端な例として、とりあえずコメントを全く返さない実装にしてみる。
+ベンチマーカーがどこまで許容するのか知りたいので、 `app.rb` の `make_posts` を編集して、まずは極端な例としてコメントを全く返さない実装にしてみる。
 
 ```diff
-<         comments = db.xquery(query, results.map { |post| post[:id] })
----
->         #comments = db.xquery(query, results.map { |post| post[:id] })
->         comments = []
+115,118d114
+<         comments = db.prepare(comments_query).execute(
+<           results.map { |post| post[:id] }
+<         )
+<
+124,127d119
+<         end
+<
+<         comments.to_a.each do |comment|
+<           id_to_post[comment[:post_id]][:comments].push({ comment: comment[:comment], user: { account_name: comment[:account_name] } })
 ```
 
 すると、なんとベンチマーカーは特にエラーなどは起こさず、得点が上がる。
+
+> {"pass":true,"score":189000,"success":204338,"fail":2151,"messages":["response code should be 200, got 500 (GET /posts)","静的ファイルが正しくありません (GET /image/15584.png)","静的ファイルが正しくありません (GET /image/15609.png)","静的ファイルが正しくありません (GET /image/15657.png)","静的ファイルが正しくありません (GET /image/15715.png)","静的ファイルが正しくありません (GET /image/15728.png)","静的ファイルが正しくありません (GET /image/15745.png)"]}
 
 [ISUCONのルール](https://github.com/catatsuy/private-isu/blob/2b7ec5fee0952212cd20740de5eae33c753569c1/manual.md#%E5%88%B6%E7%B4%84%E4%BA%8B%E9%A0%85)に
 
@@ -724,7 +732,7 @@ sudo systemctl restart isu-ruby
 
 結論としては、許される変更なのかはよくわからないが、とりあえずコメント関係の機能を `app.rb` から削除しよう。
 
-
+## stackprof を止める
 
 
 
