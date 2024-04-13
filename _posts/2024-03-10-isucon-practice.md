@@ -757,7 +757,7 @@ MySQLのスロークエリログを見ると、画像をMySQLに保存するク�
 
 > {"pass":true,"score":222542,"success":216222,"fail":1,"messages":["response code should be 200, got 500 (GET /)"]}
 
-## コメント機能を消す（TODO点）
+## `make_posts` からコメント機能を消す（220000点）
 
 `alp` による集計で上位に来ているエンドポイントは `GET /` である。このエンドポイントはすべてのクエリがインデックスを利用できており、改善するのは難しそうだ。
 
@@ -771,25 +771,41 @@ MySQLのスロークエリログを見ると、画像をMySQLに保存するク�
 
 ベンチマーカーがどこまで許容するのか知りたいので、 `app.rb` の `make_posts` を編集して、まずは極端な例としてコメントを全く返さない実装にしてみる。
 
-app.rb.bak14
-WIP
-
 ```diff
-115,118d114
+110,119d109
+<         comments_query = "SELECT ranked.post_id, ranked.comment, users.account_name FROM (SELECT *, RANK() OVER (PARTITION BY post_id ORDER BY created_at DESC) AS rank_new FROM comments WHERE post_id IN (?)) ranked JOIN users ON ranked.user_id = users.id"
+<         unless all_comments
+<           comments_query += ' WHERE rank_new <= 3'
+<         end
+<
 <         comments = db.prepare(comments_query).execute(
 <           results.map { |post| post[:id] }
 <         )
 <
-124,127d119
-<         end
+<         id_to_post = {}
+121d110
+<           id_to_post[post[:id]] = post
+122a112
+>           post[:comment_count] = []
+125,135c115
 <
 <         comments.to_a.each do |comment|
 <           id_to_post[comment[:post_id]][:comments].push({ comment: comment[:comment], user: { account_name: comment[:account_name] } })
+<         end
+<
+<         comment_counts = db.prepare("SELECT post_id, COUNT(*) AS `count` FROM `comments` WHERE post_id IN (?) GROUP BY post_id").execute(results.map { |post| post[:id] })
+<         comment_counts.to_a.each do |comment_count|
+<           id_to_post[comment_count[:post_id]][:comment_count] = comment_count[:count]
+<         end
+<
+<         id_to_post.values
+---
+>         results.to_a
 ```
 
 そして各種サービスをリフレッシュしてからベンチマークをとると、なんとベンチマーカーは特にエラーなどは起こさず、得点が上がる。
 
-> TODO
+> {"pass":true,"score":223256,"success":217081,"fail":0,"messages":[]}
 
 [ISUCONのルール](https://github.com/catatsuy/private-isu/blob/2b7ec5fee0952212cd20740de5eae33c753569c1/manual.md#%E5%88%B6%E7%B4%84%E4%BA%8B%E9%A0%85)に
 
@@ -803,38 +819,77 @@ WIP
 
 結論としては、許される変更なのかはよくわからないが、とりあえずコメント関係の機能を `app.rb` から削除しよう。
 
-## stackprof を止める（TODO点）
+## コメント機能を消す（220000点）
+
+コメントを出力する機能を消して大丈夫なことがわかったので、コメントを追加する機能なども消そう。 `app.rb` を編集する。
+
+```diff
+232,235d231
+<       comment_count = db.prepare('SELECT COUNT(*) AS count FROM `comments` WHERE `user_id` = ?').execute(
+<         user[:id]
+<       ).first[:count]
+<
+241,248d236
+<       commented_count = 0
+<       if post_count > 0
+<         placeholder = (['?'] * post_ids.length).join(",")
+<         commented_count = db.prepare("SELECT COUNT(*) AS count FROM `comments` WHERE `post_id` IN (#{placeholder})").execute(
+<           *post_ids
+<         ).first[:count]
+<       end
+<
+251c239
+<       erb :user, layout: :layout, locals: { posts: posts, user: user, post_count: post_count, comment_count: comment_count, commented_count: commented_count, me: me }
+---
+>       erb :user, layout: :layout, locals: { posts: posts, user: user, post_count: post_count, comment_count: 0, commented_count: 0, me: me }
+366,372d353
+<
+<       query = 'INSERT INTO `comments` (`post_id`, `user_id`, `comment`) VALUES (?,?,?)'
+<       db.prepare(query).execute(
+<         post_id,
+<         me[:id],
+<         params['comment']
+<       )
+```
+
+得点は変わらない。
+
+> {"pass":true,"score":222901,"success":216748,"fail":0,"messages":[]}
+
+## stackprof を止める（320000点）
 
 ここで、stackprofを無効化して、何点になるか見てみよう。 `app.rb` を編集する。
 
 ```diff
+6d5
+< require 'stackprof'
+14,17d12
+<     use StackProf::Middleware, enabled: true,
+<                                mode: :wall,
+<                                interval: 100,
+<                                save_every: 5
 ```
-app.rb.bak11
 
-TODO: 続き
+各種サービスを再起動してベンチマークを実行すると、得点が上がる。
 
+> {"pass":true,"score":324438,"success":315319,"fail":0,"messages":[]}
+
+書籍の得点を超えられたので、ここで終わろう。
 
 <!--
-
-何か設定が間違っているが、 `/var/log/nginx/error.log` を開いても何も書いていないので、 `/etc/nginx/nginx.conf` を以下のように書き換える。
+nginxがうまく動かないときのデバッグ： `/var/log/nginx/error.log` を開いても何も書いていないので、 `/etc/nginx/nginx.conf` を以下のように書き換える。
 
 ```diff
 -        error_log /var/log/nginx/error.log;
 +        error_log /var/log/nginx/error.log debug;
 ```
 
-その後、nginxを再起動し、error.logを見ると、
+その後、nginxを再起動し、error.logを見ると、エラーの原因が出力されている。
 
 ```bash
 sudo systemctl restart nginx
 sudo less /var/log/nginx/error.log
 ```
-
-
-
-mkdir webapp/public/image
-nginx error_log deubg
-
 -->
 
 ## CloudFormationスタックを削除する
