@@ -734,12 +734,15 @@ MySQLのスロークエリログを見ると、画像をMySQLに保存するク�
 >           mime, ext = "image/png", "png"
 318c318
 <           mime = "image/gif"
----                                                                                                                                                                                                                   >           mime, ext = "image/gif", "gif"                                                                                                                                                                            324c324
+---
+>           mime, ext = "image/gif", "gif"
+324c324
 <         if params['file'][:tempfile].read.length > UPLOAD_LIMIT
 ---
 >         if params['file'][:tempfile].size > UPLOAD_LIMIT
 329d328
-<         params['file'][:tempfile].rewind                                                                                                                                                                            334c333
+<         params['file'][:tempfile].rewind
+334c333
 <           params["file"][:tempfile].read,
 ---
 >           '',
