@@ -351,8 +351,6 @@ SELECT * FROM `users` WHERE `id` = 57\G
 >       results = db.prepare('SELECT posts.* FROM `posts` JOIN users ON posts.user_id = users.id WHERE posts.`id` = ? AND users.del_flg = 0').execute(
 ```
 
-TODO: imgdata
-
 各種サービスを再起動し、ベンチマークを再実行すると、得点が伸びている。
 
 > {"pass":true,"score":24644,"success":26044,"fail":294,"messages":["response code should be 200, got 500 (GET /posts)","response code should be 200, got 500 (GET /posts/4795)","ステータスコードが正しくありません: expected 422, got 500 (POST /)"]}
