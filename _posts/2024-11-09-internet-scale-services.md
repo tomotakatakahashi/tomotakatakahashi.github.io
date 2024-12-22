@@ -36,7 +36,7 @@ Chaos Monkeyっぽい考えがすでに2007年当時あったということに�
 
 > Stress test for load.
 
-> Perform capacity and performance testing prior to new releases. 
+> Perform capacity and performance testing prior to new releases.
 
 言われてみればそれはそう、ではあるのだが、言うは易く行うは難し、新機能を開発し終わったと思ったところに追加で負荷テストをするのは簡単なことではないような気がしている。負荷テストをサボったことで後から問題を起こすほうがよっぽど対処が大変ではあるのだが。
 
