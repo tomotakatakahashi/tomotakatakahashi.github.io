@@ -47,7 +47,7 @@ $$
 \left( \exp\left( 2\pi i\frac{m}{N}0\right), \dots, \exp\left( 2\pi i\frac{m}{N}n\right), \dots, \exp\left( 2\pi i\frac{m}{N}\left(N-1\right)\right) \right)
 $$
 
-は添字 $$n$$ が $$ 0 $$ から $$N$$ まで進む間に $$m$$ 周する。その間に時刻は $$0$$ 秒から $$N/g$$ 秒まで進むので、この元の周波数は $$gm/N$$ Hzである。
+は、周波数 $$ gm/N $$ Hzの信号 $$ \exp\left(2\pi i \frac{gm}{N} t \right) $$ をサンプリングしたデジタル信号ととらえることができるので、この元の周波数を $$gm/N$$ Hzだと思うことにする。
 
 たとえば、サンプル周波数が $$g = 16000$$ Hzで、窓の長さが $$N = 2048$$ である場合を考える。このとき、DFTの基底の $$m$$ 番目の元の周波数は $$16000m/2048 = 7.8125m$$ Hzである。
 
