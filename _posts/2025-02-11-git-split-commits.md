@@ -143,13 +143,13 @@ git commit -m "Add A3
 
 ```diff
 // A.txt
-+ A
++A
 // B.txt
-+ B
++B
 ```
 ```diff
 // C.txt
-+ C
++C
 ```
 
 <!--
@@ -166,15 +166,15 @@ git commit -m "Add C.txt"
 
 ```diff
 // A.txt
-+ A
++A
 ```
 ```diff
 // B.txt
-+ B
++B
 ```
 ```diff
 // C.txt
-+ C
++C
 ```
 
 いま、 `HEAD` は `C.txt` を追加したcommitを指しているので、「1. commitをファイルごとに分ける」で説明したように `git reset --mixed HEAD~` をしても `C.txt` のcommitが巻き戻されるだけで、分割したい `A.txt` と `B.txt` のcommitは巻き戻されません。
